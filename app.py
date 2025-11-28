@@ -1,4 +1,10 @@
 import streamlit as st
+# Ganz am Anfang: breites Layout für die gesamte App
+st.set_page_config(
+    page_title="Fitness App",
+    layout="wide",          # das sorgt dafür, dass alles breit angezeigt wird
+    initial_sidebar_state="expanded"
+)
 import sqlite3
 import hashlib
 import re  # password + email checks
