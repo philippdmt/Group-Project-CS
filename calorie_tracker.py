@@ -1,6 +1,5 @@
 import math
 import json
-
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -8,11 +7,9 @@ import matplotlib.pyplot as plt
 
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
-
 from database import get_profile
 
 PRIMARY_COLOR = "#007A3D"
-
 CSV_URL = "https://raw.githubusercontent.com/philippdmt/Protein_and_Calories/refs/heads/main/calories.csv"
 
 
@@ -122,39 +119,36 @@ def main():
     goal = user.get("goal", "Maintain")
 
     # -------------------------
-# -------------------------
-# TRAININGSKALORIEN BERECHNEN
-# -------------------------
-training_kcal = 0  # Standard: keine Trainingskalorien
+    # TRAININGSKALORIEN BERECHNEN
+    # -------------------------
+    training_kcal = 0  # Standard: keine Trainingskalorien
 
-# Prüfen, ob ein Workout generiert wurde
-if "current_workout" in st.session_state:
-    current_workout = st.session_state["current_workout"]
-    duration = current_workout["minutes"]
-    title = current_workout["title"]
+    if "current_workout" in st.session_state:
+        current_workout = st.session_state["current_workout"]
+        duration = current_workout["minutes"]
+        title = current_workout["title"]
 
-    strength_workouts = ["Push Day", "Pull Day", "Leg Day", "Full Body", "Upper Body", "Lower Body"]
-    if title in strength_workouts:
-        training_type_simple = "Kraft"
-    else:
-        training_type_simple = "Cardio"
+        strength_workouts = ["Push Day", "Pull Day", "Leg Day", "Full Body", "Upper Body", "Lower Body"]
+        if title in strength_workouts:
+            training_type_simple = "Kraft"
+        else:
+            training_type_simple = "Cardio"
 
-    # Trainingskalorien berechnen
-    person = {
-        "Age": age,
-        "Duration": duration,
-        "Weight": weight,
-        "Height": height,
-        "Gender_Female": 1 if gender.lower() == "female" else 0,
-        "Gender_Male": 1 if gender.lower() == "male" else 0,
-        "Training_Type_Cardio": 1 if training_type_simple == "Cardio" else 0,
-        "Training_Type_Kraft": 1 if training_type_simple == "Kraft" else 0,
-    }
+        # Trainingskalorien berechnen
+        person = {
+            "Age": age,
+            "Duration": duration,
+            "Weight": weight,
+            "Height": height,
+            "Gender_Female": 1 if gender.lower() == "female" else 0,
+            "Gender_Male": 1 if gender.lower() == "male" else 0,
+            "Training_Type_Cardio": 1 if training_type_simple == "Cardio" else 0,
+            "Training_Type_Kraft": 1 if training_type_simple == "Kraft" else 0,
+        }
 
-    person_df = pd.DataFrame([person])
-    person_df = person_df.reindex(columns=feature_columns, fill_value=0)
-    training_kcal = float(model.predict(person_df)[0])
-
+        person_df = pd.DataFrame([person])
+        person_df = person_df.reindex(columns=feature_columns, fill_value=0)
+        training_kcal = float(model.predict(person_df)[0])
 
     # -------------------------
     # CALCULATIONS
