@@ -301,7 +301,7 @@ def search_recipes(
         base = base[base]
     if pref_model is not None and not base.empty:
         base = base.copy()
-        base["score"] = base.apply(pref_model.score_recipe, axis=1)
+        base["score"] = base.apply(lambda row: pref_model.score_recipe(row), axis=1)
         base = base.sort_values("score", ascending=False)
     return base
 
