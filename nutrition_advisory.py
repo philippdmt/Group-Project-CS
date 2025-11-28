@@ -523,43 +523,10 @@ def main():
     st.subheader("Nutrition Advisory")
     st.caption("High-protein recipe suggestions and daily plan powered by Pumpfessor Joe 🥗💪")
 
-    profile = st.session_state.user_profile
-
-    # ------------------------------------------------------ ACCOUNT / PROFILE
-    if profile is None:
-        st.subheader("Create your nutrition profile")
-
-        training_split_options = [
-            "Push", "Pull", "Legs", "Upper Body", "Lower Body", "Full Body", "Cardio", "Rest"
-        ]
-        diet_options = [
-            "omnivore", "vegetarian", "vegan", "pescetarian",
-            "keto", "low carb", "paleo", "mediterranean", "flexitarian"
-        ]
-
-        with st.form("account_form"):
-            username = st.text_input("Username")
-            training_split = st.selectbox("Training type", training_split_options)
-            training_goal = st.selectbox("Training goal", ["strength", "endurance", "balanced"])
-            diet_pref = st.selectbox("Diet preference", diet_options)
-            allergies_text = st.text_input("Allergies (comma-separated)")
-            submit = st.form_submit_button("Create account")
-
-        if submit and username.strip():
-            allergies = [a.strip() for a in allergies_text.split(",") if a.strip()]
-            st.session_state.user_profile = {
-                "username": username.strip(),
-                "training_split": training_split,
-                "training_goal": training_goal,
-                "diet_pref": diet_pref,
-                "allergies": allergies,
-                "daily_calories": float(DAILY_CALORIES_PLACEHOLDER),
-            }
-            profile = st.session_state.user_profile
-
-        if profile is None:
-            # Formular ist schon gerendert, hier einfach abbrechen
-            return
+profile = st.session_state.user_profile
+if profile is None:
+    st.error("No user profile found. Please log in first.")
+    return
 
     # ------------------------------------------------------ MAIN UI
     st.write(f"Logged in as **{profile['username']}**")
