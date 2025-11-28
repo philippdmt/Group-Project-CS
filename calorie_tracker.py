@@ -118,12 +118,12 @@ def main():
     weight = user["weight"]
     gender = user.get("gender", "male")  # fallback falls gender fehlt
 
-st.markdown("### Personal & workout information")
+    # --- Personal & workout inputs ---
+    st.markdown("### Personal & workout information")
 
-# Nur Trainingsart und Dauer anzeigen
-training_type = st.selectbox("Training type", ["Cardio", "Kraft"])
-duration = st.number_input("Training duration (min)", 10, 240, 60)
-
+    # Nur Trainingsart und Dauer anzeigen
+    training_type = st.selectbox("Training type", ["Cardio", "Kraft"])
+    duration = st.number_input("Training duration (min)", 10, 240, 60)
 
     # CALCULATIONS
     person = {
@@ -136,6 +136,7 @@ duration = st.number_input("Training duration (min)", 10, 240, 60)
         "Training_Type_Cardio": 1 if training_type.lower() == "cardio" else 0,
         "Training_Type_Kraft": 1 if training_type.lower() == "kraft" else 0,
     }
+
 
     person_df = pd.DataFrame([person])
     person_df = person_df.reindex(columns=feature_columns, fill_value=0)
