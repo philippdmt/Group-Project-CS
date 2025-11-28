@@ -124,8 +124,8 @@ def main():
     # -------------------------
     # WORKOUT DATA FROM TRAINER
     # -------------------------
+    training_kcal = 0  # Standard: keine Trainingskalorien
     if "current_workout" in st.session_state:
-        # Workout aus Trainer übernehmen
         current_workout = st.session_state["current_workout"]
         duration = current_workout["minutes"]
 
@@ -135,29 +135,27 @@ def main():
             training_type_simple = "Kraft"
         else:
             training_type_simple = "Cardio"
-    else:
-        # Fallback: manuelle Eingabe (falls kein Workout aus Trainer)
-        training_type_simple = st.selectbox("Training type", ["Cardio", "Kraft"])
-        duration = st.number_input("Training duration (min)", 10, 240, 60)
+
+        # Trainingskalorien berechnen
+        person = {
+            "Age": age,
+            "Duration": duration,
+            "Weight": weight,
+            "Height": height,
+            "Gender_Female": 1 if gender.lower() == "female" else 0,
+            "Gender_Male": 1 if gender.lower() == "male" else 0,
+            "Training_Type_Cardio": 1 if training_type_simple == "Cardio" else 0,
+            "Training_Type_Kraft": 1 if training_type_simple == "Kraft" else 0,
+        }
+
+        person_df = pd.DataFrame([person])
+        person_df = person_df.reindex(columns=feature_columns, fill_value=0)
+
+        training_kcal = float(model.predict(person_df)[0])
 
     # -------------------------
     # CALCULATIONS
     # -------------------------
-    person = {
-        "Age": age,
-        "Duration": duration,
-        "Weight": weight,
-        "Height": height,
-        "Gender_Female": 1 if gender.lower() == "female" else 0,
-        "Gender_Male": 1 if gender.lower() == "male" else 0,
-        "Training_Type_Cardio": 1 if training_type_simple == "Cardio" else 0,
-        "Training_Type_Kraft": 1 if training_type_simple == "Kraft" else 0,
-    }
-
-    person_df = pd.DataFrame([person])
-    person_df = person_df.reindex(columns=feature_columns, fill_value=0)
-
-    training_kcal = float(model.predict(person_df)[0])
     bmr = grundumsatz(age, weight, height, gender)
 
     if goal.lower() == "bulk":
