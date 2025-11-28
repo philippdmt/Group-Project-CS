@@ -507,9 +507,10 @@ def main(df=None):
             df_log.columns = ["Date","Meal","Type of meal","Calories","Protein (g)","Carbs (g)","Fat (g)"]
             st.dataframe(df_log, use_container_width=True)
             # ------------------ Calorie Tracker (from calorie_tracker.py)
+    # ------------------ Calorie Tracker (fixed indentation)
     with tab_caltracker:
         st.subheader("Calorie Tracker")
-    
+
         # Importiere Funktionen aus calorie_tracker.py
         from calorie_tracker import (
             load_and_train_model,
@@ -531,6 +532,7 @@ def main(df=None):
             st.error("Please log in first.")
             return
 
+        from database import get_profile
         user = get_profile(user_id)
         if not user:
             st.error("Could not load user profile.")
@@ -542,39 +544,29 @@ def main(df=None):
         gender = user.get("gender", "male")
         goal = user.get("goal", "Maintain")
 
-        # ===============================
+    # ===============================
     # AUTOMATIC WORKOUT IMPORT
     # ===============================
+        workout = st.session_state.get("current_workout", None)
 
-    workout = st.session_state.get("current_workout", None)
-
-    if workout is None:
-        st.info("No workout logged today. Training calories will be 0.")
-        training_type = "kraft"   # ML braucht Kraft vs Cardio → default
-        duration = 0
-    else:
-        # Extract from workout planner
-        w_title = workout.get("title", "").lower()
-        duration = workout.get("minutes", 0)
-
-        # Map workout title to ML training types
-        kraft_keywords = ["push", "pull", "leg", "full body", "upper", "lower"]
-
-        if any(k in w_title for k in kraft_keywords):
-            training_type = "kraft"
+        if workout is None:
+            st.info("No workout logged today. Training calories will be 0.")
+            training_type = "kraft"  # ML expects kraft/cardio
+            duration = 0
         else:
-            training_type = "kraft"   # fallback (Cardio gibt es nicht)
+            w_title = workout.get("title", "").lower()
+            duration = workout.get("minutes", 0)
 
-    # Show workout info to user
-        st.markdown("### Workout summary")
+            kraft_keywords = ["push", "pull", "leg", "full body", "upper", "lower"]
+            if any(k in w_title for k in kraft_keywords):
+                training_type = "kraft"
+            else:
+                training_type = "kraft"  # default fallback
 
-    if duration == 0:
-        st.write("No training logged today.")
-    else:
-        st.success(f"Today's workout: **{workout['title']}** — {duration} minutes")
+            st.success(f"Today's workout: **{workout['title']}** — {duration} minutes")
 
         # ML input
-       person = {
+        person = {
             "Age": age,
             "Duration": duration,
             "Weight": weight,
@@ -585,7 +577,6 @@ def main(df=None):
             "Training_Type_Kraft": 1 if training_type == "kraft" else 0,
         }
 
-
         person_df = pd.DataFrame([person])
         person_df = person_df.reindex(columns=feature_columns, fill_value=0)
 
@@ -593,7 +584,7 @@ def main(df=None):
             training_kcal = float(model.predict(person_df)[0])
         except Exception:
             training_kcal = 0
-    
+
         # BMR & daily target
         bmr = grundumsatz(age, weight, height, gender)
 
@@ -610,46 +601,44 @@ def main(df=None):
         target_calories = max(target_calories, 1200)
         target_protein = protein_per_kg * weight
 
-        # ================================
+    # ================================
     # DAILY TARGETS FIRST (DOUGHNUTS)
     # ================================
-    total_cal = sum(m["calories"] for m in st.session_state.get("ct_meals", []))
-    total_prot = sum(m["protein"] for m in st.session_state.get("ct_meals", []))
+        if "ct_meals" not in st.session_state:
+            st.session_state.ct_meals = []
 
-    st.markdown("### Daily targets")
-    c1, c2 = st.columns(2)
-    with c1:
-        donut_chart(total_cal, target_calories, "Calories", "kcal")
-    with c2:
-        donut_chart(total_prot, target_protein, "Protein", "g")
+        total_cal = sum(m["calories"] for m in st.session_state.ct_meals)
+        total_prot = sum(m["protein"] for m in st.session_state.ct_meals)
 
+        st.markdown("### Daily targets")
+        c1, c2 = st.columns(2)
+        with c1:
+            donut_chart(total_cal, target_calories, "Calories", "kcal")
+        with c2:
+            donut_chart(total_prot, target_protein, "Protein", "g")
 
-# ================================
-# MEAL LOGGING BELOW (FORM AFTER CHARTS)
-# ================================
-    if "ct_meals" not in st.session_state:
-        st.session_state.ct_meals = []
+    # ================================
+    # MEAL LOGGING BELOW
+    # ================================
+        st.markdown("### Log meals")
+        with st.form("ct_meal_form"):
+            m1, m2, m3 = st.columns([2, 1, 1])
+            meal_name = m1.text_input("Meal name", "Chicken & rice")
+            meal_cal = m2.number_input("Calories", 0, 3000, 500)
+            meal_prot = m3.number_input("Protein (g)", 0, 200, 30)
+            submitted = st.form_submit_button("Add meal")
 
-    st.markdown("### Log meals")
+        if submitted:
+            st.session_state.ct_meals.append(
+                {"meal": meal_name, "calories": float(meal_cal), "protein": float(meal_prot)}
+            )
 
-    with st.form("ct_meal_form"):
-        m1, m2, m3 = st.columns([2, 1, 1])
-        meal_name = m1.text_input("Meal name", "Chicken & rice")
-        meal_cal = m2.number_input("Calories", 0, 3000, 500)
-        meal_prot = m3.number_input("Protein (g)", 0, 200, 30)
-        submitted = st.form_submit_button("Add meal")
+        if st.button("Reset meals", key="ct_reset"):
+            st.session_state.ct_meals = []
 
-    if submitted:
-        st.session_state.ct_meals.append(
-            {"meal": meal_name, "calories": float(meal_cal), "protein": float(meal_prot)}
-        )
-
-    if st.button("Reset meals", key="ct_reset"):
-        st.session_state.ct_meals = []
-
-    if st.session_state.ct_meals:
-        st.markdown("### Logged meals")
-        st.table(pd.DataFrame(st.session_state.ct_meals))
+        if st.session_state.ct_meals:
+            st.markdown("### Logged meals")
+            st.table(pd.DataFrame(st.session_state.ct_meals))
 
 
     
