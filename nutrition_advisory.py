@@ -4,6 +4,7 @@ from fractions import Fraction
 from collections import Counter
 from typing import List, Optional
 from datetime import date
+from database import get_profile
 
 import pandas as pd
 import streamlit as st
