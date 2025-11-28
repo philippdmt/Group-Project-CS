@@ -118,19 +118,12 @@ def main():
     weight = user["weight"]
     gender = user.get("gender", "male")  # fallback falls gender fehlt
 
-    st.markdown("### Personal & workout information")
+st.markdown("### Personal & workout information")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write(f"**Age:** {age}")
-        st.write(f"**Height:** {height} cm")
-        st.write(f"**Weight:** {weight} kg")
-        st.write(f"**Gender:** {gender}")
+# Nur Trainingsart und Dauer anzeigen
+training_type = st.selectbox("Training type", ["Cardio", "Kraft"])
+duration = st.number_input("Training duration (min)", 10, 240, 60)
 
-    with col2:
-        goal = st.selectbox("Goal", ["Cut", "Maintain", "Bulk"])
-        training_type = st.selectbox("Training type", ["Cardio", "Kraft"])
-        duration = st.number_input("Training duration (min)", 10, 240, 60)
 
     # CALCULATIONS
     person = {
