@@ -376,22 +376,23 @@ def show_recipe_card(
 # =============================================================================
 # MAIN APP
 # =============================================================================
-def main():
+def main(df=None):
     st.set_page_config(page_title="Nutrition Advisory", layout="wide")
     init_session_state()
 
-    st.title("Nutrition Advisory")
-    st.caption("High-protein recipe suggestions and daily plan 🥗💪")
+    if df is None:
+        st.error("Recipe data not loaded.")
+        return
 
     profile = {
         "username": "Guest",
-        "daily_calories": DAILY_CALORIES_PLACEHOLDER,
+        "daily_calories": 2000,
         "training_goal": "strength",
         "diet_pref": "omnivore",
         "allergies": []
     }
 
-    df = load_and_prepare_data(DATA_URL)
+    # restlicher Code unverändert, nur df verwenden statt load_and_prepare_data(DATA_URL)
 
     tab_suggested, tab_search, tab_fav, tab_log = st.tabs(["Suggested recipes","Search recipes","Favourite recipes","Meals eaten"])
 
