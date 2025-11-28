@@ -15,6 +15,7 @@ import workout_planner  # teammates' workout builder
 import workout_calendar  # teammates' calendar
 import calorie_tracker   # ML-based calorie & protein tracker
 import nutrition_advisory
+import calories_nutrition
 from nutrition_advisory import main as nutrition_main, load_and_prepare_data, DATA_URL
 
 # DataFrame nur einmal beim App-Start laden
@@ -1107,6 +1108,8 @@ def main():
         st.session_state.current_page = "Trainer"
     if st.sidebar.button("🔥  Calorie tracker"):
         st.session_state.current_page = "Calorie tracker"
+    if st.sidebar.button("🥘  Calories & Nutrition"):
+    st.session_state.current_page = "Calories & Nutrition"
     if st.sidebar.button("🥗  Nutrition adviser"):
         st.session_state.current_page = "Nutrition adviser"
     if st.sidebar.button("📈  Progress"):
@@ -1129,10 +1132,10 @@ def main():
 
     page = st.session_state.current_page
 
-    # Pumpfessor Joe helper for the current page
+    # Pumpfessor Joe helper für die aktuelle Seite
     show_pumpfessor_joe(page)
 
-    # then show the main content
+    # Seiten anzeigen
     if page == "Profile":
         show_profile_page()
     elif page == "Trainer":
@@ -1143,6 +1146,10 @@ def main():
         show_nutrition_page()
     elif page == "Progress":
         show_progress_page()
+    # <<< Hier die neue Seite einfügen >>>
+    elif page == "Calories & Nutrition":
+        show_calories_nutrition_page()
+
 
 
 # ---- FINAL CSS OVERRIDES (ensure buttons + sidebar look correct) ----
