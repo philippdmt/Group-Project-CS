@@ -970,6 +970,15 @@ def show_calorie_tracker_page():
         with st.container(border=True):
             calorie_tracker.main()
 
+def show_calories_nutrition_page():
+    """Calorie tracker page: integrates ML-based nutrition planner."""
+    st.header("Calorie tracker")
+    st.divider()
+
+    with st.container():
+        with st.container(border=True):
+            calories_nutrition.main()
+
 
 def show_nutrition_page():
     """Nutrition adviser page: load logic from nutrition_advisory.py"""
