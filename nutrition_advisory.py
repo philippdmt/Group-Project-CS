@@ -8,6 +8,11 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+st.set_page_config(
+    page_title="Nutrition Advisory",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 # =============================================================================
 # CONFIG
 # =============================================================================
