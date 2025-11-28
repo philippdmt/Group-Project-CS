@@ -1109,7 +1109,7 @@ def main():
     if st.sidebar.button("🔥  Calorie tracker"):
         st.session_state.current_page = "Calorie tracker"
     if st.sidebar.button("🥘  Calories & Nutrition"):
-    st.session_state.current_page = "Calories & Nutrition"
+        st.session_state.current_page = "Calories & Nutrition"
     if st.sidebar.button("🥗  Nutrition adviser"):
         st.session_state.current_page = "Nutrition adviser"
     if st.sidebar.button("📈  Progress"):
