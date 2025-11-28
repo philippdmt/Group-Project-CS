@@ -425,7 +425,14 @@ def main(df=None):
         "allergies": []
     }
 
-    tab_suggested, tab_search, tab_fav, tab_log = st.tabs(["Suggested recipes","Search recipes","Favourite recipes","Meals eaten"])
+    tab_caltracker, tab_suggested, tab_search, tab_fav, tab_log = st.tabs([
+    "Calorie Tracker",
+    "Suggested recipes",
+    "Search recipes",
+    "Favourite recipes",
+    "Meals eaten"
+    ])
+
 
     # ------------------ Suggested recipes
     with tab_suggested:
@@ -498,6 +505,117 @@ def main(df=None):
             df_log = df_log[["date_str","recipe_name","meal_name","calories","protein","carbs","fat"]]
             df_log.columns = ["Date","Meal","Type of meal","Calories","Protein (g)","Carbs (g)","Fat (g)"]
             st.dataframe(df_log, use_container_width=True)
+            # ------------------ Calorie Tracker (from calorie_tracker.py)
+    with tab_caltracker:
+        st.subheader("Calorie Tracker")
+    
+        # Importiere Funktionen aus calorie_tracker.py
+        from calorie_tracker import (
+            load_and_train_model,
+            grundumsatz,
+            donut_chart
+        )
+
+        # Model & features laden
+        try:
+            model, feature_columns = load_and_train_model()
+        except Exception as e:
+            st.error("Error loading ML model.")
+            st.exception(e)
+            return
+
+        # User Profil
+        user_id = st.session_state.get("user_id", None)
+        if user_id is None:
+            st.error("Please log in first.")
+            return
+
+        user = get_profile(user_id)
+        if not user:
+            st.error("Could not load user profile.")
+            return
+
+        age = user["age"]
+        weight = user["weight"]
+        height = user["height"]
+        gender = user.get("gender", "male")
+        goal = user.get("goal", "Maintain")
+
+        st.markdown("### Workout information")
+        training_type = st.selectbox("Training type", ["Cardio", "Kraft"], key="ct_training_type")
+        duration = st.number_input("Training duration (min)", 10, 240, 60, key="ct_duration")
+
+        # ML input
+        person = {
+            "Age": age,
+            "Duration": duration,
+            "Weight": weight,
+            "Height": height,
+            "Gender_Female": 1 if gender.lower() == "female" else 0,
+            "Gender_Male": 1 if gender.lower() == "male" else 0,
+            "Training_Type_Cardio": 1 if training_type.lower() == "cardio" else 0,
+            "Training_Type_Kraft": 1 if training_type.lower() == "kraft" else 0,
+        }
+
+        person_df = pd.DataFrame([person])
+        person_df = person_df.reindex(columns=feature_columns, fill_value=0)
+
+        try:
+            training_kcal = float(model.predict(person_df)[0])
+        except Exception:
+            training_kcal = 0
+    
+        # BMR & daily target
+        bmr = grundumsatz(age, weight, height, gender)
+
+        if goal.lower() == "bulk":
+            target_calories = bmr + training_kcal + 300
+            protein_per_kg = 2.0
+        elif goal.lower() == "cut":
+            target_calories = bmr + training_kcal - 300
+            protein_per_kg = 2.2
+        else:
+            target_calories = bmr + training_kcal
+            protein_per_kg = 1.6
+
+        target_calories = max(target_calories, 1200)
+        target_protein = protein_per_kg * weight
+
+        # Meal log
+        if "ct_meals" not in st.session_state:
+            st.session_state.ct_meals = []
+
+        st.markdown("### Log meals")
+        with st.form("ct_meal_form"):
+            m1, m2, m3 = st.columns([2, 1, 1])
+            meal_name = m1.text_input("Meal name", "Chicken & rice")
+            meal_cal = m2.number_input("Calories", 0, 3000, 500)
+            meal_prot = m3.number_input("Protein (g)", 0, 200, 30)
+            submitted = st.form_submit_button("Add meal")
+
+        if submitted:
+            st.session_state.ct_meals.append(
+                {"meal": meal_name, "calories": float(meal_cal), "protein": float(meal_prot)}
+            )
+
+        if st.button("Reset meals", key="ct_reset"):
+            st.session_state.ct_meals = []
+
+        total_cal = sum(m["calories"] for m in st.session_state.ct_meals)
+        total_prot = sum(m["protein"] for m in st.session_state.ct_meals)
+
+        st.markdown("### Daily targets")
+        c1, c2 = st.columns(2)
+        with c1:
+            donut_chart(total_cal, target_calories, "Calories", "kcal")
+        with c2:
+            donut_chart(total_prot, target_protein, "Protein", "g")
+
+        if st.session_state.ct_meals:
+            st.markdown("### Logged meals")
+            st.table(pd.DataFrame(st.session_state.ct_meals))
+
+    
 
 if __name__=="__main__":
     main()
