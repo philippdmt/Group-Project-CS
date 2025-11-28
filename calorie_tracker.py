@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 
-from database import get_user_data   # <-- SQL IMPORT
+from database import get_profile
 
 PRIMARY_COLOR = "#007A3D"
 
@@ -37,7 +37,6 @@ def load_and_train_model():
     y = calories["Calories"]
 
     features = calories.drop(columns=["User_ID", "Heart_Rate", "Body_Temp", "Calories"])
-
     X = pd.get_dummies(features, columns=["Gender", "Training_Type"], drop_first=False)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
@@ -88,10 +87,11 @@ def donut_chart(consumed, total, title, unit):
 
 
 def main():
+
     st.subheader("Pumpfessor Joe – Nutrition Planner")
     st.write("Automatic calculation of calories and protein based on training and body data.")
 
-    # LOAD MODEL
+    # MODEL LOAD
     try:
         model, feature_columns = load_and_train_model()
     except Exception as e:
@@ -99,46 +99,40 @@ def main():
         st.exception(e)
         return
 
-    # -------------------------------------------
-    # 🚨 SQL: BENUTZERDATEN LADEN
-    # -------------------------------------------
-if "logged_in" not in st.session_state or not st.session_state.logged_in:
-    st.error("Please log in first.")
-    return
+    # -------------------------
+    # SQL → USER DATA
+    # -------------------------
+    if "logged_in" not in st.session_state or not st.session_state.logged_in:
+        st.error("Please log in first.")
+        return
 
-user_id = st.session_state.user_id
-user = get_profile(user_id)
+    user_id = st.session_state.user_id
+    user = get_profile(user_id)
 
-if not user:
-    st.error("Could not load user profile.")
-    return
+    if not user:
+        st.error("Could not load user profile.")
+        return
 
-age = user["age"]
-height = user["height"]
-weight = user["weight"]
-gender = user.get("gender", "Not set")  # falls du gender später einbaust
+    age = user["age"]
+    height = user["height"]
+    weight = user["weight"]
+    gender = user.get("gender", "male")  # fallback falls gender fehlt
 
-
-    # -------------------------------------------
-    # TRAININGSDATEN (weiterhin Eingabe)
-    # -------------------------------------------
     st.markdown("### Personal & workout information")
 
     col1, col2 = st.columns(2)
     with col1:
-        st.write(f"**Gender:** {gender}")
         st.write(f"**Age:** {age}")
         st.write(f"**Height:** {height} cm")
         st.write(f"**Weight:** {weight} kg")
+        st.write(f"**Gender:** {gender}")
 
     with col2:
         goal = st.selectbox("Goal", ["Cut", "Maintain", "Bulk"])
         training_type = st.selectbox("Training type", ["Cardio", "Kraft"])
         duration = st.number_input("Training duration (min)", 10, 240, 60)
 
-    # -------------------------------------------
     # CALCULATIONS
-    # -------------------------------------------
     person = {
         "Age": age,
         "Duration": duration,
@@ -156,7 +150,6 @@ gender = user.get("gender", "Not set")  # falls du gender später einbaust
     training_kcal = float(model.predict(person_df)[0])
     bmr = grundumsatz(age, weight, height, gender)
 
-    # GOAL
     if goal.lower() == "bulk":
         target_calories = bmr + training_kcal + 300
         protein_per_kg = 2.0
@@ -170,9 +163,10 @@ gender = user.get("gender", "Not set")  # falls du gender später einbaust
     target_calories = max(target_calories, 1200)
     target_protein = protein_per_kg * weight
 
-    # -------------------------------------------
     # MEAL LOGGING
-    # -------------------------------------------
+    if "meals" not in st.session_state:
+        st.session_state.meals = []
+
     st.markdown("### Log meals")
     with st.form("meal_form"):
         m1, m2, m3 = st.columns([2, 1, 1])
