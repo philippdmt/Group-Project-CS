@@ -32,12 +32,10 @@ def load_and_train_model():
     )
 
     y = calories["Calories"]
-
     features = calories.drop(columns=["User_ID", "Heart_Rate", "Body_Temp", "Calories"])
     X = pd.get_dummies(features, columns=["Gender", "Training_Type"], drop_first=False)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
-
     model = LinearRegression()
     model.fit(X_train, y_train)
 
@@ -57,7 +55,6 @@ def donut_chart(consumed, total, title, unit):
 
     consumed = max(0, consumed)
     remaining = max(total - consumed, 0)
-
     color = "#007A3D" if consumed <= total else "#FF0000"
 
     fig, ax = plt.subplots(figsize=(3, 3), facecolor="white")
@@ -70,16 +67,7 @@ def donut_chart(consumed, total, title, unit):
     )
     ax.set(aspect="equal")
     ax.set_title(title)
-
-    ax.text(
-        0,
-        0,
-        f"{int(consumed)} / {int(total)} {unit}",
-        ha="center",
-        va="center",
-        fontsize=10,
-    )
-
+    ax.text(0, 0, f"{int(consumed)} / {int(total)} {unit}", ha="center", va="center", fontsize=10)
     st.pyplot(fig)
 
 
@@ -106,7 +94,6 @@ def main():
 
     user_id = st.session_state.user_id
     user = get_profile(user_id)
-
     if not user:
         st.error("Could not load user profile.")
         return
@@ -120,18 +107,14 @@ def main():
     # -------------------------
     # TRAININGSKALORIEN BERECHNEN
     # -------------------------
-    training_kcal = 0  # Standard: keine Trainingskalorien
-
+    training_kcal = 0
     if "current_workout" in st.session_state:
         current_workout = st.session_state["current_workout"]
         duration = current_workout["minutes"]
         title = current_workout["title"]
 
         strength_workouts = ["Push Day", "Pull Day", "Leg Day", "Full Body", "Upper Body", "Lower Body"]
-        if title in strength_workouts:
-            training_type_simple = "Kraft"
-        else:
-            training_type_simple = "Cardio"
+        training_type_simple = "Kraft" if title in strength_workouts else "Cardio"
 
         # Trainingskalorien berechnen
         person = {
@@ -168,14 +151,18 @@ def main():
     target_protein = protein_per_kg * weight
 
     # -------------------------
-    # DAILY TARGET CHARTS (Doughnut) – zuerst anzeigen
+    # MEAL LOGGING
     # -------------------------
     if "meals" not in st.session_state:
         st.session_state.meals = []
 
+    # Berechnung für Charts
     total_cal = sum(m["calories"] for m in st.session_state.meals)
     total_prot = sum(m["protein"] for m in st.session_state.meals)
 
+    # -------------------------
+    # DAILY TARGET CHARTS
+    # -------------------------
     st.markdown("### Daily targets")
     c1, c2 = st.columns(2)
     with c1:
@@ -184,7 +171,7 @@ def main():
         donut_chart(total_prot, target_protein, "Protein", "g")
 
     # -------------------------
-    # MEAL LOGGING – danach
+    # LOG MEALS
     # -------------------------
     st.markdown("### Log meals")
     with st.form("meal_form"):
