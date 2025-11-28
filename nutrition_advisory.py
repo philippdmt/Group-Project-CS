@@ -582,39 +582,47 @@ def main(df=None):
         target_calories = max(target_calories, 1200)
         target_protein = protein_per_kg * weight
 
-        # Meal log
-        if "ct_meals" not in st.session_state:
-            st.session_state.ct_meals = []
+        # ================================
+    # DAILY TARGETS FIRST (DOUGHNUTS)
+    # ================================
+    total_cal = sum(m["calories"] for m in st.session_state.get("ct_meals", []))
+    total_prot = sum(m["protein"] for m in st.session_state.get("ct_meals", []))
 
-        st.markdown("### Log meals")
-        with st.form("ct_meal_form"):
-            m1, m2, m3 = st.columns([2, 1, 1])
-            meal_name = m1.text_input("Meal name", "Chicken & rice")
-            meal_cal = m2.number_input("Calories", 0, 3000, 500)
-            meal_prot = m3.number_input("Protein (g)", 0, 200, 30)
-            submitted = st.form_submit_button("Add meal")
+    st.markdown("### Daily targets")
+    c1, c2 = st.columns(2)
+    with c1:
+        donut_chart(total_cal, target_calories, "Calories", "kcal")
+    with c2:
+        donut_chart(total_prot, target_protein, "Protein", "g")
 
-        if submitted:
-            st.session_state.ct_meals.append(
-                {"meal": meal_name, "calories": float(meal_cal), "protein": float(meal_prot)}
-            )
 
-        if st.button("Reset meals", key="ct_reset"):
-            st.session_state.ct_meals = []
+# ================================
+# MEAL LOGGING BELOW (FORM AFTER CHARTS)
+# ================================
+    if "ct_meals" not in st.session_state:
+        st.session_state.ct_meals = []
 
-        total_cal = sum(m["calories"] for m in st.session_state.ct_meals)
-        total_prot = sum(m["protein"] for m in st.session_state.ct_meals)
+    st.markdown("### Log meals")
 
-        st.markdown("### Daily targets")
-        c1, c2 = st.columns(2)
-        with c1:
-            donut_chart(total_cal, target_calories, "Calories", "kcal")
-        with c2:
-            donut_chart(total_prot, target_protein, "Protein", "g")
+    with st.form("ct_meal_form"):
+        m1, m2, m3 = st.columns([2, 1, 1])
+        meal_name = m1.text_input("Meal name", "Chicken & rice")
+        meal_cal = m2.number_input("Calories", 0, 3000, 500)
+        meal_prot = m3.number_input("Protein (g)", 0, 200, 30)
+        submitted = st.form_submit_button("Add meal")
 
-        if st.session_state.ct_meals:
-            st.markdown("### Logged meals")
-            st.table(pd.DataFrame(st.session_state.ct_meals))
+    if submitted:
+        st.session_state.ct_meals.append(
+            {"meal": meal_name, "calories": float(meal_cal), "protein": float(meal_prot)}
+        )
+
+    if st.button("Reset meals", key="ct_reset"):
+        st.session_state.ct_meals = []
+
+    if st.session_state.ct_meals:
+        st.markdown("### Logged meals")
+        st.table(pd.DataFrame(st.session_state.ct_meals))
+
 
     
 
