@@ -8,6 +8,7 @@ import base64  # for background image + logo
 import workout_planner  # teammates' workout builder
 import workout_calendar  # teammates' calendar
 import calorie_tracker   # ML-based calorie & protein tracker
+import nutrition_advisory
 
 
 # ---------- basic page setup ----------
@@ -881,20 +882,15 @@ def show_calorie_tracker_page():
 
 
 def show_nutrition_page():
-    """Placeholder page for future nutrition adviser logic."""
+    """Nutrition adviser page: load logic from nutrition_advisory.py"""
     st.header("Nutrition adviser")
     st.divider()
 
     col_left, col_center, col_right = st.columns([1, 2, 1])
     with col_center:
         with st.container(border=True):
-            st.subheader("Coming soon")
-            st.write(
-                "This page will later provide nutrition advice based on your goals, "
-                "diet preferences and allergies."
-            )
-            st.info("Nutrition adviser logic will be implemented by your teammates.")
-
+            # ruft das externe Modul auf
+            nutrition_advisory.main()
 
 def show_progress_page():
     """Simple placeholder progress page with a demo chart."""
