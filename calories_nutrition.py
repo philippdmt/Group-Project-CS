@@ -1,80 +1,90 @@
-import math
+# calories_nutrition.py
+#
+# Vollständige Fusion aus:
+# - calorie_tracker.py
+# - nutrition_advisory.py
+# Mit automatischer Einbindung von: database.get_profile + workout_planner.current_workout
+#
+# Diese Datei wird von app.py über show_calories_nutrition_page() aufgerufen.
+
+
 import json
 import ast
 from fractions import Fraction
 from collections import Counter
-from typing import List, Optional
+from typing import Optional, List
 from datetime import date
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
+
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 
-# ------------------ CONFIG ------------------
+# --- Profil-Funktion aus deiner DB ---
+from database import get_profile
+
+# --- Rezeptdaten laden wie im Original ---
+DATA_URL = (
+    "https://huggingface.co/datasets/datahiveai/recipes-with-nutrition"
+    "/resolve/main/recipes-with-nutrition.csv"
+)
+
 PRIMARY_COLOR = "#007A3D"
+
+
+# =====================================================================
+# 1) MACHINE-LEARNING TEIL (aus calorie_tracker.py)
+# =====================================================================
+
 CSV_URL = "https://raw.githubusercontent.com/philippdmt/Protein_and_Calories/refs/heads/main/calories.csv"
-RECIPE_URL = "https://huggingface.co/datasets/datahiveai/recipes-with-nutrition/resolve/main/recipes-with-nutrition.csv"
 
-HIGH_PROTEIN_MIN = 25
-MAX_CALORIES_PER_SERVING = 800
 
-# ------------------ CALORIE TRACKER HELPERS ------------------
 def determine_training_type(heart_rate, age):
     if heart_rate >= 0.6 * (220 - age):
         return "Cardio"
-    else:
-        return "Kraft"
+    return "Kraft"
+
 
 @st.cache_data
 def load_and_train_model():
+    """Kalorienmodell laden + trainieren."""
     try:
         calories = pd.read_csv("calories.csv")
     except FileNotFoundError:
         calories = pd.read_csv(CSV_URL)
 
     calories["Training_Type"] = calories.apply(
-        lambda row: determine_training_type(row["Heart_Rate"], row["Age"]), axis=1
+        lambda r: determine_training_type(r["Heart_Rate"], r["Age"]), axis=1
     )
 
     y = calories["Calories"]
+
     features = calories.drop(columns=["User_ID", "Heart_Rate", "Body_Temp", "Calories"])
     X = pd.get_dummies(features, columns=["Gender", "Training_Type"], drop_first=False)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+
     model = LinearRegression()
     model.fit(X_train, y_train)
 
     return model, X.columns.tolist()
 
+
 def grundumsatz(age, weight, height, gender):
+    """Mifflin-St Jeor Formel."""
     if gender.lower() == "male":
         return 10 * weight + 6.25 * height - 5 * age + 5
-    else:
-        return 10 * weight + 6.25 * height - 5 * age - 161
+    return 10 * weight + 6.25 * height - 5 * age - 161
 
-def donut_chart(consumed, total, title, unit):
-    if total <= 0:
-        total = 1
-    consumed = max(0, consumed)
-    remaining = max(total - consumed, 0)
-    color = "#007A3D" if consumed <= total else "#FF0000"
-    fig, ax = plt.subplots(figsize=(3, 3), facecolor="white")
-    ax.pie(
-        [consumed, remaining],
-        startangle=90,
-        counterclock=False,
-        colors=[color, "#E0E0E0"],
-        wedgeprops={"width": 0.35, "edgecolor": "white"},
-    )
-    ax.set(aspect="equal")
-    ax.set_title(title)
-    ax.text(0, 0, f"{int(consumed)} / {int(total)} {unit}", ha="center", va="center", fontsize=10)
-    st.pyplot(fig)
 
-# ------------------ NUTRITION ADVISOR HELPERS ------------------
+# =====================================================================
+# 2) REZEPT-MODELL + PARSING (aus nutrition_advisory.py)
+# =====================================================================
+
+# Bruchzeichen
 UNICODE_FRACTIONS = {
     "¼": "1/4", "½": "1/2", "¾": "3/4",
     "⅐": "1/7", "⅑": "1/9", "⅒": "1/10",
@@ -84,447 +94,555 @@ UNICODE_FRACTIONS = {
     "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8",
 }
 
+
 def float_to_fraction_str(x: float, max_denominator: int = 16) -> str:
     f = Fraction(x).limit_denominator(max_denominator)
     if f.denominator == 1:
         return str(f.numerator)
     return f"{f.numerator}/{f.denominator}"
 
-def parse_quantity_token(token: str):
-    token = token.strip()
-    if token in UNICODE_FRACTIONS:
-        token = UNICODE_FRACTIONS[token]
-    if "-" in token and not token.startswith("-"):
-        try:
-            a, b = token.split("-")
-            return (float(Fraction(a)) + float(Fraction(b))) / 2
-        except Exception:
-            pass
+
+def parse_quantity_token(t: str):
+    t = t.strip()
+    if t in UNICODE_FRACTIONS:
+        t = UNICODE_FRACTIONS[t]
     try:
-        return float(Fraction(token))
+        return float(Fraction(t))
     except Exception:
         return None
+
 
 def split_quantity_from_line(line: str):
     if not line:
         return None, line
     tokens = line.split()
-    qty_tokens = []
-    rest_tokens = []
+    qty_parts = []
+    rest = []
     for i, tok in enumerate(tokens):
         val = parse_quantity_token(tok)
-        if val is not None and not rest_tokens:
-            qty_tokens.append(tok)
+        if val is not None and not rest:
+            qty_parts.append(tok)
         else:
-            rest_tokens = tokens[i:]
+            rest = tokens[i:]
             break
-    if not qty_tokens:
+    if not qty_parts:
         return None, line
-    qty = sum(parse_quantity_token(t) for t in qty_tokens)
-    rest = " ".join(rest_tokens).strip()
-    return qty, rest
+    qty = sum(parse_quantity_token(t) for t in qty_parts)
+    return qty, " ".join(rest)
+
 
 def scale_ingredient_lines(lines, factor: float):
-    scaled = []
+    out = []
     for line in lines:
         qty, rest = split_quantity_from_line(line)
         if qty is None:
-            scaled.append(line)
+            out.append(line)
             continue
         new_qty = qty * factor
-        frac = float_to_fraction_str(new_qty)
-        scaled.append(f"{frac} {rest}".strip())
-    return scaled
+        out.append(f"{float_to_fraction_str(new_qty)} {rest}")
+    return out
+
+
+class UserPreferenceModel:
+    def __init__(self):
+        self.liked = Counter()
+        self.disliked = Counter()
+
+    def update_with_rating(self, row: pd.Series, rating: int):
+        ings = row.get("ingredients_list", [])
+        if rating > 0:
+            self.liked.update(ings)
+        else:
+            self.disliked.update(ings)
+
+    def score(self, row: pd.Series):
+        ings = row.get("ingredients_list", [])
+        total = 0
+        for ing in ings:
+            total += self.liked.get(ing, 0)
+            total -= self.disliked.get(ing, 0)
+        return total
+
 
 def get_nutrient(nutrient_json, key):
     try:
-        data = json.loads(nutrient_json)
-        if key in data and "quantity" in data[key]:
-            return float(data[key]["quantity"])
+        d = json.loads(nutrient_json)
+        if key in d and "quantity" in d[key]:
+            return float(d[key]["quantity"])
     except Exception:
         return None
     return None
 
+
 def parse_ingredients_for_allergy(x):
     if pd.isna(x):
         return []
-    s = str(x)
     try:
-        val = ast.literal_eval(s)
-        if isinstance(val, list):
-            if all(isinstance(v, dict) and "text" in v for v in val):
-                return [str(v["text"]).strip().lower() for v in val]
-            return [str(v).strip().lower() for v in val]
+        v = ast.literal_eval(str(x))
+        if isinstance(v, list):
+            # {"text": "..."} oder string
+            out = []
+            for el in v:
+                if isinstance(el, dict) and "text" in el:
+                    out.append(el["text"].lower())
+                else:
+                    out.append(str(el).lower())
+            return out
     except Exception:
         pass
-    return [p.strip().lower() for p in s.split(",") if p.strip()]
+    return [p.strip().lower() for p in str(x).split(",") if p.strip()]
+
 
 def parse_ingredient_lines_for_display(x):
     if pd.isna(x):
         return []
-    s = str(x)
     try:
-        val = ast.literal_eval(s)
-        if isinstance(val, list):
-            return [str(v).strip() for v in val if str(v).strip()]
+        v = ast.literal_eval(str(x))
+        if isinstance(v, list):
+            return [str(el).strip() for el in v]
     except Exception:
         pass
-    return [p.strip() for p in s.split(",") if p.strip()]
+    return [p.strip() for p in str(x).split(",") if p.strip()]
+
 
 @st.cache_data(show_spinner=True)
-def load_and_prepare_data(path_or_url: str) -> pd.DataFrame:
-    df = pd.read_csv(path_or_url)
+def load_and_prepare_recipes():
+    df = pd.read_csv(DATA_URL)
+
     df["protein_g_total"] = df["total_nutrients"].apply(lambda x: get_nutrient(x, "PROCNT"))
     df["fat_g_total"]     = df["total_nutrients"].apply(lambda x: get_nutrient(x, "FAT"))
     df["carbs_g_total"]   = df["total_nutrients"].apply(lambda x: get_nutrient(x, "CHOCDF"))
+
     df = df.dropna(subset=["protein_g_total", "fat_g_total", "carbs_g_total", "calories", "servings"])
-    df["protein_g_total"] = df["protein_g_total"].astype(float)
-    df["fat_g_total"]     = df["fat_g_total"].astype(float)
-    df["carbs_g_total"]   = df["carbs_g_total"].astype(float)
-    df["calories"]        = df["calories"].astype(float)
-    df["servings"] = pd.to_numeric(df["servings"], errors="coerce").fillna(1)
-    df.loc[df["servings"] <= 0, "servings"] = 1
-    df["calories_per_serving"] = df["calories"] / df["servings"]
+
     df["protein_g"] = df["protein_g_total"] / df["servings"]
-    df["fat_g"]     = df["fat_g_total"] / df["servings"]
-    df["carbs_g"]   = df["carbs_g_total"] / df["servings"]
+    df["fat_g"]     = df["fat_g_total"]     / df["servings"]
+    df["carbs_g"]   = df["carbs_g_total"]   / df["servings"]
+    df["calories_per_serving"] = df["calories"] / df["servings"]
 
-    fitness_df = df[
-        (df["protein_g"] >= HIGH_PROTEIN_MIN) &
-        (df["calories_per_serving"] <= MAX_CALORIES_PER_SERVING)
-    ].copy()
-
-    fitness_df["ingredients_list"] = fitness_df["ingredients"].apply(parse_ingredients_for_allergy)
-    fitness_df["ingredient_lines_parsed"] = fitness_df["ingredient_lines"].apply(parse_ingredient_lines_for_display)
-    fitness_df["ingredient_lines_per_serving"] = fitness_df.apply(
-        lambda row: scale_ingredient_lines(row["ingredient_lines_parsed"], 1.0/float(row["servings"])),
+    df["ingredients_list"] = df["ingredients"].apply(parse_ingredients_for_allergy)
+    df["ingredient_lines_parsed"] = df["ingredient_lines"].apply(parse_ingredient_lines_for_display)
+    df["ingredient_lines_per_serving"] = df.apply(
+        lambda r: scale_ingredient_lines(r["ingredient_lines_parsed"], 1/float(r["servings"])),
         axis=1
     )
-    return fitness_df
+    return df
 
-# ------------------ USER PREFERENCE MODEL ------------------
-class UserPreferenceModel:
-    def __init__(self):
-        self.liked_ingredients = Counter()
-        self.disliked_ingredients = Counter()
 
-    def update_with_rating(self, recipe_row: pd.Series, rating: int):
-        ings = recipe_row.get("ingredients_list", [])
-        if rating > 0:
-            self.liked_ingredients.update(ings)
-        elif rating < 0:
-            self.disliked_ingredients.update(ings)
+# =====================================================================
+# 3) DONUT-CHART (aus calorie_tracker)
+# =====================================================================
 
-    def score_recipe(self, recipe_row: pd.Series) -> float:
-        ings = recipe_row.get("ingredients_list", [])
-        score = 0.0
-        for ing in ings:
-            score += self.liked_ingredients.get(ing, 0)
-            score -= self.disliked_ingredients.get(ing, 0)
-        return score
+def donut_chart(consumed, total, title, unit):
+    total = max(total, 1)
+    consumed = max(consumed, 0)
+    remaining = max(total - consumed, 0)
 
-# ------------------ SESSION STATE INIT ------------------
-def init_session_state():
-    if "pref_model" not in st.session_state:
-        st.session_state.pref_model = UserPreferenceModel()
-    if "meals" not in st.session_state:
-        st.session_state.meals = []
-    if "meal_log" not in st.session_state:
-        st.session_state.meal_log = []
-    if "favourite_recipes" not in st.session_state:
-        st.session_state.favourite_recipes = set()
-    if "daily_plan" not in st.session_state:
-        st.session_state.daily_plan = None
-    if "eaten_today" not in st.session_state:
-        st.session_state.eaten_today = set()
-    if "rating_stage" not in st.session_state:
-        st.session_state.rating_stage = {}
-    if "consumed" not in st.session_state:
-        st.session_state.consumed = {"cal":0.0,"protein":0.0,"carbs":0.0,"fat":0.0}
+    color = PRIMARY_COLOR if consumed <= total else "#FF0000"
 
-# ------------------ MEAL LOGGING ------------------
-def log_meal(row: pd.Series, meal_name: str):
-    entry = {
-        "date_str": date.today().strftime("%d/%m/%Y"),
-        "recipe_name": row["recipe_name"],
-        "meal_name": meal_name,
-        "calories": row["calories_per_serving"],
-        "protein": row["protein_g"],
-        "carbs": row["carbs_g"],
-        "fat": row["fat_g"],
-    }
-    st.session_state.meal_log.append(entry)
-    st.session_state.consumed["cal"] += entry["calories"]
-    st.session_state.consumed["protein"] += entry["protein"]
-    st.session_state.consumed["carbs"] += entry["carbs"]
-    st.session_state.consumed["fat"] += entry["fat"]
-    st.session_state.eaten_today.add(row["recipe_name"])
+    fig, ax = plt.subplots(figsize=(3, 3))
+    ax.pie(
+        [consumed, remaining],
+        startangle=90,
+        counterclock=False,
+        colors=[color, "#E0E0E0"],
+        wedgeprops={"width": 0.35, "edgecolor": "white"},
+    )
+    ax.set(aspect="equal")
+    ax.set_title(title)
+    ax.text(0, 0, f"{int(consumed)} / {int(total)} {unit}", ha="center", va="center")
+    st.pyplot(fig)
 
-# ------------------ RECIPE PICKER ------------------
-def filter_by_preferences(df: pd.DataFrame, diet_pref: str, allergies: List[str]) -> pd.DataFrame:
-    diet_pref = (diet_pref or "omnivore").lower()
-    allergies = [a.strip().lower() for a in allergies if a.strip()]
-    res = df.copy()
+
+# =====================================================================
+# 4) FILTER & PICK RECIPES
+# =====================================================================
+
+def filter_recipes(df, diet_pref: str, allergies: List[str]):
+    diet_pref = (diet_pref or "No preference").lower()
+
+    base = df.copy()
+
     if diet_pref == "vegan":
-        res = res[res["diet_labels"].astype(str).str.contains("vegan", case=False, na=False)]
+        base = base[base["diet_labels"].astype(str).str.contains("vegan", case=False, na=False)]
     elif diet_pref == "vegetarian":
-        res = res[
-            res["diet_labels"].astype(str).str.contains("vegetarian", case=False, na=False) |
-            res["diet_labels"].astype(str).str.contains("vegan", case=False, na=False)
+        base = base[
+            base["diet_labels"].astype(str).str.contains("vegetarian", case=False, na=False)
         ]
-    if allergies:
-        res = res[res["ingredients_list"].apply(lambda ing: not any(any(a in x for x in ing) for a in allergies))]
-    return res
 
-def search_recipes(
-    df: pd.DataFrame,
-    include_ingredients: List[str],
-    exclude_ingredients: List[str],
-    meal_type: str,
-    max_calories: Optional[float],
-    diet_pref: str,
-    allergies: List[str],
-    pref_model: Optional[UserPreferenceModel],
-) -> pd.DataFrame:
-    base = filter_by_preferences(df, diet_pref, allergies)
-    include_ingredients = [i.strip().lower() for i in include_ingredients if i.strip()]
-    exclude_ingredients = [i.strip().lower() for i in exclude_ingredients if i.strip()]
-    if meal_type != "all":
-        base = base[base["meal_type"].astype(str).str.contains(meal_type, case=False, na=False)]
-    if max_calories:
-        base = base[base["calories_per_serving"] <= max_calories]
-    if include_ingredients:
-        base = base["ingredients_list"].apply(lambda ing: all(any(inc in x for x in ing) for inc in include_ingredients))
-        base = base[base]
-    if exclude_ingredients:
-        base = base["ingredients_list"].apply(lambda ing: not any(any(exc in x for x in ing) for exc in exclude_ingredients))
-        base = base[base]
-    if pref_model is not None and not base.empty:
-        base = base.copy()
-        if isinstance(base, pd.Series):
-            base = base.to_frame().T  # in DataFrame mit einer Zeile umwandeln
-        base["score"] = base.apply(lambda row: pref_model.score_recipe(row), axis=1)
-        base = base.sort_values("score", ascending=False)
+    if allergies:
+        allergies = [a.lower().strip() for a in allergies]
+        base = base[base["ingredients_list"].apply(lambda ing:
+            not any(any(allg in x for x in ing) for allg in allergies)
+        )]
+
     return base
 
-def pick_meal(df: pd.DataFrame, meal_type: str, target_cal: float, training_goal: str, pref_model: Optional[UserPreferenceModel]) -> Optional[pd.Series]:
-    base = df[df["meal_type"].astype(str).str.contains(meal_type, case=False, na=False)]
-    if base.empty:
+
+def pick_meal(df, meal_type: str, calories_target: float, pref_model: Optional[UserPreferenceModel]):
+    subset = df[df["meal_type"].astype(str).str.contains(meal_type, case=False, na=False)]
+    if subset.empty:
         return None
-    base = base.copy()
-    base["cal_diff"] = (base["calories_per_serving"] - target_cal).abs()
-    g = (training_goal or "").lower()
-    if g == "strength":
-        base = base.sort_values(["protein_g", "cal_diff"], ascending=[False, True])
-    elif g == "endurance":
-        base = base.sort_values(["carbs_g", "cal_diff"], ascending=[False, True])
+    subset = subset.copy()
+
+    subset["distance"] = (subset["calories_per_serving"] - calories_target).abs()
+    if pref_model:
+        subset["score"] = subset.apply(pref_model.score, axis=1)
+        subset = subset.sort_values(["score", "distance"], ascending=[False, True])
     else:
-        base = base.sort_values("cal_diff", ascending=True)
-    if pref_model is not None:
-        base["score"] = base.apply(pref_model.score_recipe, axis=1)
-        base = base.sort_values(["score", "cal_diff"], ascending=[False, True])
-    top_n = min(20, len(base))
-    return base.head(top_n).sample(1).iloc[0]
+        subset = subset.sort_values("distance")
 
-def recommend_daily_plan(df: pd.DataFrame, daily_calories: float, training_goal: str, diet_pref: str, allergies: List[str], pref_model: Optional[UserPreferenceModel]):
-    user_df = filter_by_preferences(df, diet_pref, allergies)
-    breakfast_cal = daily_calories * 0.25
-    lunch_cal = daily_calories * 0.40
-    dinner_cal = daily_calories * 0.35
-    breakfast = pick_meal(user_df, "breakfast", breakfast_cal, training_goal, pref_model)
-    lunch = pick_meal(user_df, "lunch", lunch_cal, training_goal, pref_model)
-    dinner = pick_meal(user_df, "dinner", dinner_cal, training_goal, pref_model)
-    return {"Breakfast": (breakfast, breakfast_cal), "Lunch": (lunch, lunch_cal), "Dinner": (dinner, dinner_cal)}
+    return subset.head(20).sample(1).iloc[0]
 
-# ------------------ RECIPE CARD ------------------
-def show_recipe_card(
-    row: pd.Series,
-    key_prefix: str,
-    meal_name: str,
-    mode: str = "default",
-    df: Optional[pd.DataFrame] = None,
-    profile: Optional[dict] = None,
-    pref_model: Optional[UserPreferenceModel] = None,
-    meal_target_calories: Optional[float] = None,
-):
-    if row is None:
-        st.write("No suitable recipe found.")
-        return
-    recipe_name = row["recipe_name"]
-    eaten = recipe_name in st.session_state.eaten_today
-    rating_stage = st.session_state.rating_stage.get(recipe_name, "none")
-    with st.container():
-        col_left, col_right = st.columns([1, 5])
-        with col_left:
-            img_url = row.get("image_url", "")
-            if img_url and img_url.strip():
-                st.image(img_url, width=240)
-            else:
-                st.write("No image available.")
-        with col_right:
-            st.subheader(recipe_name)
-            n1, n2, n3, n4 = st.columns(4)
-            n1.metric("Calories", f"{row['calories_per_serving']:.0f}")
-            n2.metric("Protein", f"{row['protein_g']:.1f} g")
-            n3.metric("Carbs", f"{row['carbs_g']:.1f} g")
-            n4.metric("Fat", f"{row['fat_g']:.1f} g")
-            st.markdown("**Ingredients (per serving)**")
-            for line in row.get("ingredient_lines_per_serving", []):
-                st.markdown(f"- {line}")
-            st.markdown("---")
-            # Buttons omitted for brevity
 
-# ------------------ MAIN APP ------------------
+# =====================================================================
+# 5) HAUPT-ENTRY FÜR DIE FUSIONIERTE SEITE
+# =====================================================================
+
 def main():
-    st.set_page_config(page_title="Nutrition & Calorie Tracker", layout="wide")
-    init_session_state()
 
-    # Load Models/Data
-    try:
-        model, feature_columns = load_and_train_model()
-    except Exception as e:
-        st.error("Error loading calorie model.")
-        st.exception(e)
-        return
-    try:
-        df_recipes = st.session_state.get("recipes_df", None)
-        if df_recipes is None:
-            st.info("Loading recipe data...")
-            df_recipes = load_and_prepare_data(RECIPE_URL)
-            st.session_state.recipes_df = df_recipes
-    except Exception as e:
-        st.error("Error loading recipe data.")
-        st.exception(e)
+    # ------------------------------------------------------
+    # A) Profil laden
+    # ------------------------------------------------------
+    if "logged_in" not in st.session_state or not st.session_state.logged_in:
+        st.error("Please log in first.")
         return
 
-    # User Profile
-    profile = {
-        "username": "Guest",
-        "age": 25,
-        "weight": 75,
-        "height": 180,
-        "gender": "male",
-        "goal": "Maintain",
-        "training_goal": "strength",
-        "diet_pref": "omnivore",
-        "allergies": []
+    user_id = st.session_state.user_id
+    profile = get_profile(user_id)
+
+    if not profile:
+        st.error("Could not load your profile.")
+        return
+
+    age = profile["age"]
+    weight = profile["weight"]
+    height = profile["height"]
+    gender = profile.get("gender", "Male")
+    goal = profile.get("goal", "Maintain")
+    allergies = (profile.get("allergies") or "").split(",")
+    diet_pref = profile.get("diet_preferences", "No preference")
+
+    # ------------------------------------------------------
+    # B) ML-Modell laden
+    # ------------------------------------------------------
+    try:
+        model, feature_cols = load_and_train_model()
+    except Exception as e:
+        st.error("Model load error.")
+        st.exception(e)
+        return
+
+    # ------------------------------------------------------
+    # C) Rezeptdaten laden (einmal pro App)
+    # ------------------------------------------------------
+    if "recipes_df" not in st.session_state:
+        with st.spinner("Loading recipes..."):
+            st.session_state.recipes_df = load_and_prepare_recipes()
+    recipes = st.session_state.recipes_df
+
+    # ------------------------------------------------------
+    # D) Preference Model initialisieren
+    # ------------------------------------------------------
+    if "pref_model" not in st.session_state:
+        st.session_state.pref_model = UserPreferenceModel()
+
+    # ------------------------------------------------------
+    # E) Meal Log initialisieren
+    # ------------------------------------------------------
+    if "meal_log" not in st.session_state:
+        st.session_state.meal_log = []
+
+    # ------------------------------------------------------
+    # F) Training übernehmen (oder Grundumsatz-only)
+    # ------------------------------------------------------
+    workout = st.session_state.get("current_workout")
+
+    if workout:
+        workout_minutes = workout["minutes"]
+
+        # heuristik: Musclegroup-Workouts = Kraft
+        title_lower = workout["title"].lower()
+        if any(key in title_lower for key in ["push", "pull", "leg", "upper", "lower", "full body"]):
+            training_type = "Kraft"
+        else:
+            training_type = "Cardio"
+    else:
+        workout_minutes = 0
+        training_type = "Kraft"   # irrelevant, da training_kcal = 0
+
+    # ------------------------------------------------------
+    # G) Tagesziel berechnen
+    # ------------------------------------------------------
+    bmr = grundumsatz(age, weight, height, gender)
+
+    # ML-Feature vorbereiten
+    person = {
+        "Age": age,
+        "Duration": workout_minutes,
+        "Weight": weight,
+        "Height": height,
+        "Gender_Female": 1 if gender.lower() == "female" else 0,
+        "Gender_Male":   1 if gender.lower() == "male" else 0,
+        "Training_Type_Cardio": 1 if training_type == "Cardio" else 0,
+        "Training_Type_Kraft":  1 if training_type == "Kraft" else 0,
     }
+    person_df = pd.DataFrame([person]).reindex(columns=feature_cols, fill_value=0)
 
-    # Calculate BMR & Target Calories
-    bmr = grundumsatz(profile["age"], profile["weight"], profile["height"], profile["gender"])
-    training_kcal = 0
-    if profile["goal"].lower() == "bulk":
+    if workout:
+        training_kcal = float(model.predict(person_df)[0])
+    else:
+        training_kcal = 0.0
+
+    # Ziel
+    if goal.lower() == "bulk":
         target_calories = bmr + training_kcal + 300
         protein_per_kg = 2.0
-    elif profile["goal"].lower() == "cut":
+    elif goal.lower() == "cut":
         target_calories = bmr + training_kcal - 300
         protein_per_kg = 2.2
     else:
         target_calories = bmr + training_kcal
         protein_per_kg = 1.6
-    target_calories = max(target_calories, 1200)
-    target_protein = protein_per_kg * profile["weight"]
 
-    # Tabs
-    tab_tracker, tab_suggested, tab_search, tab_fav, tab_log = st.tabs(
-        ["Daily Tracker","Suggested Recipes","Search Recipes","Favourite Recipes","Meals eaten"]
-    )
+    target_calories = max(1200, target_calories)
+    target_protein = protein_per_kg * weight
 
-    # ---------- Daily Tracker ----------
-    with tab_tracker:
-        st.subheader("Daily Calorie & Protein Tracker")
-        total_cal = sum(m["calories"] for m in st.session_state.meals)
-        total_prot = sum(m["protein"] for m in st.session_state.meals)
+    # ------------------------------------------------------
+    # H) UI LAYOUT
+    # ------------------------------------------------------
+    st.subheader("Calories & Nutrition — Pumpfessor Joe")
+
+    tabs = st.tabs([
+        "Daily Calories",
+        "Meal Logging",
+        "Daily Recipe Plan",
+        "Search Recipes",
+        "Favourites",
+        "Meals Eaten",
+    ])
+
+    # ------------------------------------------------------
+    # TAB 1: Daily calories
+    # ------------------------------------------------------
+    with tabs[0]:
+        st.write(f"**Workout today:** {workout['title'] if workout else 'No workout'}")
+        st.write(f"**Workout duration:** {workout_minutes} min")
+        st.write(f"**Training calories:** {round(training_kcal)} kcal")
+        st.write(f"**BMR:** {round(bmr)} kcal")
+
         c1, c2 = st.columns(2)
-        with c1: donut_chart(total_cal, target_calories, "Calories", "kcal")
-        with c2: donut_chart(total_prot, target_protein, "Protein", "g")
-        st.markdown("### Log meals")
-        with st.form("meal_form"):
-            m1, m2, m3 = st.columns([2, 1, 1])
-            meal_name = m1.text_input("Meal name", "Chicken & rice")
-            meal_cal = m2.number_input("Calories", 0, 3000, 500)
-            meal_prot = m3.number_input("Protein (g)", 0, 200, 30)
-            submitted = st.form_submit_button("Add meal")
-        if submitted:
-            st.session_state.meals.append({"meal": meal_name,"calories": float(meal_cal),"protein": float(meal_prot)})
-        if st.button("Reset meals"):
-            st.session_state.meals = []
-
-    # ---------- Suggested Recipes ----------
-    with tab_suggested:
-        st.subheader("Suggested recipes for today")
-        if st.button("Generate daily plan"):
-            plan = recommend_daily_plan(
-                df_recipes,
+        with c1:
+            donut_chart(
+                sum(x["calories"] for x in st.session_state.meal_log),
                 target_calories,
-                profile["training_goal"],
-                profile["diet_pref"],
-                profile["allergies"],
-                st.session_state.pref_model,
+                "Calories",
+                "kcal"
             )
-            st.session_state.daily_plan = plan
-        plan = st.session_state.daily_plan
-        if plan:
-            for meal_name,(row,target_cal) in plan.items():
-                st.markdown(f"### {meal_name}")
-                show_recipe_card(row, f"plan_{meal_name}", meal_name,"default", df_recipes, profile, st.session_state.pref_model, target_cal)
-        else:
-            st.info("Click 'Generate daily plan' to get recommendations.")
+        with c2:
+            donut_chart(
+                sum(x["protein"] for x in st.session_state.meal_log),
+                target_protein,
+                "Protein",
+                "g"
+            )
 
-    # ---------- Search Recipes ----------
-    with tab_search:
+    # ------------------------------------------------------
+    # TAB 2: Meal Logging
+    # ------------------------------------------------------
+    with tabs[1]:
+        st.subheader("Log a meal")
+        with st.form("meal_form"):
+            col1, col2, col3 = st.columns([2,1,1])
+            name = col1.text_input("Meal name", "Chicken & Rice")
+            cal = col2.number_input("Calories", 0, 3000, 500)
+            prot = col3.number_input("Protein (g)", 0, 300, 30)
+            submit = st.form_submit_button("Add Meal")
+
+        if submit:
+            st.session_state.meal_log.append({
+                "date_str": date.today().strftime("%d/%m/%Y"),
+                "meal": name,
+                "calories": float(cal),
+                "protein": float(prot),
+            })
+
+        if st.button("Reset meals"):
+            st.session_state.meal_log = []
+
+        st.write("### Your meals today")
+        if st.session_state.meal_log:
+            st.table(pd.DataFrame(st.session_state.meal_log))
+        else:
+            st.info("No meals logged yet.")
+
+    # ------------------------------------------------------
+    # TAB 3: Daily recipe plan
+    # ------------------------------------------------------
+    with tabs[2]:
+        st.subheader("Suggested meals for today")
+
+        if st.button("Generate daily plan"):
+            user_df = filter_recipes(recipes, diet_pref, allergies)
+            breakfast_cal = target_calories * 0.25
+            lunch_cal     = target_calories * 0.40
+            dinner_cal    = target_calories * 0.35
+
+            plan = {
+                "Breakfast": pick_meal(user_df, "breakfast", breakfast_cal, st.session_state.pref_model),
+                "Lunch":     pick_meal(user_df, "lunch",     lunch_cal,     st.session_state.pref_model),
+                "Dinner":    pick_meal(user_df, "dinner",    dinner_cal,    st.session_state.pref_model),
+            }
+            st.session_state.daily_plan = plan
+
+        plan = st.session_state.get("daily_plan", None)
+        if not plan:
+            st.info("Click 'Generate daily plan' to get suggestions.")
+        else:
+            for meal_name, row in plan.items():
+                st.markdown(f"### {meal_name}")
+                if row is None:
+                    st.warning("No suitable recipe found.")
+                else:
+                    _show_recipe_card(row, meal_name, recipes)
+
+    # ------------------------------------------------------
+    # TAB 4: Search recipes
+    # ------------------------------------------------------
+    with tabs[3]:
         st.subheader("Search recipes")
+
         col1,col2,col3 = st.columns(3)
         with col1:
-            include_text = st.text_input("Must include ingredients (comma separated)")
+            include = st.text_input("Must include (comma separated)")
         with col2:
-            exclude_text = st.text_input("Exclude ingredients (comma separated)")
+            exclude = st.text_input("Exclude (comma separated)")
         with col3:
-            meal_type = st.selectbox("Meal type", ["all","breakfast","lunch","dinner"])
-        max_cal = st.number_input("Max calories per serving", 0, 3000, MAX_CALORIES_PER_SERVING)
-        include_ingredients = [x.strip() for x in include_text.split(",") if x.strip()]
-        exclude_ingredients = [x.strip() for x in exclude_text.split(",") if x.strip()]
+            meal_type = st.selectbox("Meal type", ["all", "breakfast", "lunch", "dinner"])
+
+        include_list = [x.strip().lower() for x in include.split(",") if x.strip()]
+        exclude_list = [x.strip().lower() for x in exclude.split(",") if x.strip()]
+
+        max_cal = st.number_input("Max calories per serving", 0, 3000, 800)
+
         if st.button("Search"):
-            results = search_recipes(
-                df_recipes,
-                include_ingredients,
-                exclude_ingredients,
-                meal_type,
-                max_cal,
-                profile["diet_pref"],
-                profile["allergies"],
-                st.session_state.pref_model
-            )
-            st.session_state.search_results = results
-        results = st.session_state.get("search_results", None)
-        if results is None:
-            st.info("Set filters and click 'Search'.")
-        elif results.empty:
-            st.warning("No recipes matched your filters.")
-        else:
-            st.write(f"Found {len(results)} recipes (showing first 20).")
-            for idx,row in results.head(20).iterrows():
-                show_recipe_card(row, f"search_{idx}", "Search","default", df_recipes, profile, st.session_state.pref_model)
+            df = filter_recipes(recipes, diet_pref, allergies)
+            if meal_type != "all":
+                df = df[df["meal_type"].astype(str).str.contains(meal_type, case=False, na=False)]
+            if include_list:
+                df = df[df["ingredients_list"].apply(
+                    lambda ing: all(any(i in x for x in ing) for i in include_list)
+                )]
+            if exclude_list:
+                df = df[df["ingredients_list"].apply(
+                    lambda ing: not any(any(e in x for x in ing) for e in exclude_list)
+                )]
+            df = df[df["calories_per_serving"] <= max_cal]
 
-    # ---------- Favourite Recipes ----------
-    with tab_fav:
-        st.subheader("Favourite Recipes")
-        fav_ids = st.session_state.favourite_recipes
-        if not fav_ids:
-            st.info("No favourite recipes yet.")
-        else:
-            fav_df = df_recipes[df_recipes["recipe_name"].isin(fav_ids)]
-            for idx,row in fav_df.iterrows():
-                show_recipe_card(row, f"fav_{idx}", "Favourite","default", df_recipes, profile, st.session_state.pref_model)
+            if df.empty:
+                st.warning("No recipes found.")
+            else:
+                st.success(f"{len(df)} recipes found (showing first 20).")
+                for idx, row in df.head(20).iterrows():
+                    _show_recipe_card(row, f"search_{idx}", recipes)
 
-    # ---------- Meal Log ----------
-    with tab_log:
-        st.subheader("Meals Eaten")
+    # ------------------------------------------------------
+    # TAB 5: Favourites
+    # ------------------------------------------------------
+    with tabs[4]:
+        st.subheader("Favourite recipes")
+
+        favs = st.session_state.get("favourite_recipes", set())
+        if not favs:
+            st.info("No favourites yet.")
+        else:
+            for idx in favs:
+                if idx in recipes.index:
+                    row = recipes.loc[idx]
+                    _show_recipe_card(row, f"fav_{idx}", recipes, mode="favourite")
+
+    # ------------------------------------------------------
+    # TAB 6: Meals eaten
+    # ------------------------------------------------------
+    with tabs[5]:
+        st.subheader("Meals eaten")
+
         if not st.session_state.meal_log:
-            st.info("No meals logged yet.")
+            st.info("No meals recorded yet.")
         else:
-            df_log = pd.DataFrame(st.session_state.meal_log)
-            st.dataframe(df_log)
+            df = pd.DataFrame(st.session_state.meal_log)
+            st.dataframe(df, use_container_width=True)
 
-if __name__=="__main__":
-    main()
+
+
+# =====================================================================
+# HELFER FÜR REZEPT-KARTEN
+# =====================================================================
+
+def _show_recipe_card(row: pd.Series, meal_name: str, df: pd.DataFrame, mode="default"):
+    """Abgespeckte Version aus nutrition_advisory, kompatibel für Fusion."""
+    if row is None:
+        st.write("No recipe found.")
+        return
+
+    name = row["recipe_name"]
+    img = row.get("image_url", "")
+    calories = row["calories_per_serving"]
+    protein = row["protein_g"]
+    carbs = row["carbs_g"]
+    fat = row["fat_g"]
+    ingredients = row.get("ingredient_lines_per_serving", [])
+
+    eaten = name in {x.get("meal") for x in st.session_state.meal_log}
+
+    with st.container():
+        col1, col2 = st.columns([1, 5])
+
+        with col1:
+            if isinstance(img, str) and img.strip():
+                st.image(img, width=200)
+            else:
+                st.write("No image")
+
+        with col2:
+            st.subheader(name)
+
+            n1, n2, n3, n4 = st.columns(4)
+            n1.metric("Calories", f"{calories:.0f}")
+            n2.metric("Protein", f"{protein:.1f}g")
+            n3.metric("Carbs", f"{carbs:.1f}g")
+            n4.metric("Fat", f"{fat:.1f}g")
+
+            st.markdown("**Ingredients (per serving):**")
+            for line in ingredients:
+                st.markdown(f"- {line}")
+
+            st.markdown("---")
+
+            # Buttons
+            if mode == "favourite":
+                if st.button("Remove from favourites", key=f"rmfav_{name}"):
+                    st.session_state.favourite_recipes.discard(row.name)
+                return
+
+            # Already eaten?
+            if not eaten:
+                if st.button(f"I ate this ({meal_name})", key=f"eat_{name}"):
+                    st.session_state.meal_log.append({
+                        "date_str": date.today().strftime("%d/%m/%Y"),
+                        "meal": name,
+                        "calories": calories,
+                        "protein": protein,
+                    })
+                    st.success("Meal added!")
+                if st.button("I don't like this", key=f"skip_{name}"):
+                    st.session_state.pref_model.update_with_rating(row, -1)
+                return
+
+            # Rating
+            if st.button("I liked it", key=f"like_{name}"):
+                st.session_state.pref_model.update_with_rating(row, +1)
+            if st.button("Save to favourites", key=f"fav_{name}"):
+                if "favourite_recipes" not in st.session_state:
+                    st.session_state.favourite_recipes = set()
+                st.session_state.favourite_recipes.add(row.name)
