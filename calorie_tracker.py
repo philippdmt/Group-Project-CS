@@ -102,21 +102,22 @@ def main():
     # -------------------------------------------
     # 🚨 SQL: BENUTZERDATEN LADEN
     # -------------------------------------------
-    if "loggedIn" not in st.session_state or not st.session_state["loggedIn"]:
-        st.error("Please log in first.")
-        return
+if "logged_in" not in st.session_state or not st.session_state.logged_in:
+    st.error("Please log in first.")
+    return
 
-    username = st.session_state["username"]
-    user = get_user_data(username)
+user_id = st.session_state.user_id
+user = get_profile(user_id)
 
-    if not user:
-        st.error("User data could not be loaded.")
-        return
+if not user:
+    st.error("Could not load user profile.")
+    return
 
-    gender = user["gender"]
-    age = user["age"]
-    height = user["height"]
-    weight = user["weight"]
+age = user["age"]
+height = user["height"]
+weight = user["weight"]
+gender = user.get("gender", "Not set")  # falls du gender später einbaust
+
 
     # -------------------------------------------
     # TRAININGSDATEN (weiterhin Eingabe)
