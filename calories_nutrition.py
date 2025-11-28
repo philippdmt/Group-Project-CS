@@ -294,9 +294,11 @@ def search_recipes(
     if max_calories:
         base = base[base["calories_per_serving"] <= max_calories]
     if include_ingredients:
-        base = base[base["ingredients_list"].apply(lambda ing: all(any(inc in x for x in ing) for inc in include_ingredients))]
+        base = base["ingredients_list"].apply(lambda ing: all(any(inc in x for x in ing) for inc in include_ingredients))
+        base = base[base]
     if exclude_ingredients:
-        base = base[base["ingredients_list"].apply(lambda ing: not any(any(exc in x for x in ing) for exc in exclude_ingredients))]
+        base = base["ingredients_list"].apply(lambda ing: not any(any(exc in x for x in ing) for exc in exclude_ingredients))
+        base = base[base]
     if pref_model is not None and not base.empty:
         base = base.copy()
         base["score"] = base.apply(pref_model.score_recipe, axis=1)
@@ -368,14 +370,14 @@ def show_recipe_card(
             for line in row.get("ingredient_lines_per_serving", []):
                 st.markdown(f"- {line}")
             st.markdown("---")
-            # Buttons logic omitted for brevity, same as in your code
+            # Buttons omitted for brevity
 
 # ------------------ MAIN APP ------------------
 def main():
     st.set_page_config(page_title="Nutrition & Calorie Tracker", layout="wide")
     init_session_state()
 
-    # ------------------ Load Models/Data ------------------
+    # Load Models/Data
     try:
         model, feature_columns = load_and_train_model()
     except Exception as e:
@@ -393,7 +395,7 @@ def main():
         st.exception(e)
         return
 
-    # ------------------ User Profile (example) ------------------
+    # User Profile
     profile = {
         "username": "Guest",
         "age": 25,
@@ -406,10 +408,9 @@ def main():
         "allergies": []
     }
 
-    # ------------------ Calculate BMR & Training Calories ------------------
+    # Calculate BMR & Target Calories
     bmr = grundumsatz(profile["age"], profile["weight"], profile["height"], profile["gender"])
     training_kcal = 0
-    # Here we could add session_state["current_workout"] logic if needed
     if profile["goal"].lower() == "bulk":
         target_calories = bmr + training_kcal + 300
         protein_per_kg = 2.0
@@ -422,7 +423,7 @@ def main():
     target_calories = max(target_calories, 1200)
     target_protein = protein_per_kg * profile["weight"]
 
-    # ------------------ Tabs ------------------
+    # Tabs
     tab_tracker, tab_suggested, tab_search, tab_fav, tab_log = st.tabs(
         ["Daily Tracker","Suggested Recipes","Search Recipes","Favourite Recipes","Meals eaten"]
     )
@@ -468,8 +469,60 @@ def main():
         else:
             st.info("Click 'Generate daily plan' to get recommendations.")
 
-    # ---------- Remaining tabs omitted for brevity ----------
-    # They would contain Search, Favourite, Meal log same as in Nutrition Advisor code
+    # ---------- Search Recipes ----------
+    with tab_search:
+        st.subheader("Search recipes")
+        col1,col2,col3 = st.columns(3)
+        with col1:
+            include_text = st.text_input("Must include ingredients (comma separated)")
+        with col2:
+            exclude_text = st.text_input("Exclude ingredients (comma separated)")
+        with col3:
+            meal_type = st.selectbox("Meal type", ["all","breakfast","lunch","dinner"])
+        max_cal = st.number_input("Max calories per serving", 0, 3000, MAX_CALORIES_PER_SERVING)
+        include_ingredients = [x.strip() for x in include_text.split(",") if x.strip()]
+        exclude_ingredients = [x.strip() for x in exclude_text.split(",") if x.strip()]
+        if st.button("Search"):
+            results = search_recipes(
+                df_recipes,
+                include_ingredients,
+                exclude_ingredients,
+                meal_type,
+                max_cal,
+                profile["diet_pref"],
+                profile["allergies"],
+                st.session_state.pref_model
+            )
+            st.session_state.search_results = results
+        results = st.session_state.get("search_results", None)
+        if results is None:
+            st.info("Set filters and click 'Search'.")
+        elif results.empty:
+            st.warning("No recipes matched your filters.")
+        else:
+            st.write(f"Found {len(results)} recipes (showing first 20).")
+            for idx,row in results.head(20).iterrows():
+                show_recipe_card(row, f"search_{idx}", "Search","default", df_recipes, profile, st.session_state.pref_model)
+
+    # ---------- Favourite Recipes ----------
+    with tab_fav:
+        st.subheader("Favourite Recipes")
+        fav_ids = st.session_state.favourite_recipes
+        if not fav_ids:
+            st.info("No favourite recipes yet.")
+        else:
+            fav_df = df_recipes[df_recipes["recipe_name"].isin(fav_ids)]
+            for idx,row in fav_df.iterrows():
+                show_recipe_card(row, f"fav_{idx}", "Favourite","default", df_recipes, profile, st.session_state.pref_model)
+
+    # ---------- Meal Log ----------
+    with tab_log:
+        st.subheader("Meals Eaten")
+        if not st.session_state.meal_log:
+            st.info("No meals logged yet.")
+        else:
+            df_log = pd.DataFrame(st.session_state.meal_log)
+            st.dataframe(df_log)
 
 if __name__=="__main__":
     main()
