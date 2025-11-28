@@ -122,36 +122,39 @@ def main():
     goal = user.get("goal", "Maintain")
 
     # -------------------------
-    # WORKOUT DATA FROM TRAINER
-    # -------------------------
-    training_kcal = 0  # Standard: keine Trainingskalorien
-    if "current_workout" in st.session_state:
-        current_workout = st.session_state["current_workout"]
-        duration = current_workout["minutes"]
+# -------------------------
+# TRAININGSKALORIEN BERECHNEN
+# -------------------------
+training_kcal = 0  # Standard: keine Trainingskalorien
 
-        # Mapping: Push/Pull/Leg etc. -> Kraft, alles andere -> Cardio
-        strength_workouts = ["Push Day", "Pull Day", "Leg Day", "Full Body", "Upper Body", "Lower Body"]
-        if current_workout["title"] in strength_workouts:
-            training_type_simple = "Kraft"
-        else:
-            training_type_simple = "Cardio"
+# Prüfen, ob ein Workout generiert wurde
+if "current_workout" in st.session_state:
+    current_workout = st.session_state["current_workout"]
+    duration = current_workout["minutes"]
+    title = current_workout["title"]
 
-        # Trainingskalorien berechnen
-        person = {
-            "Age": age,
-            "Duration": duration,
-            "Weight": weight,
-            "Height": height,
-            "Gender_Female": 1 if gender.lower() == "female" else 0,
-            "Gender_Male": 1 if gender.lower() == "male" else 0,
-            "Training_Type_Cardio": 1 if training_type_simple == "Cardio" else 0,
-            "Training_Type_Kraft": 1 if training_type_simple == "Kraft" else 0,
-        }
+    strength_workouts = ["Push Day", "Pull Day", "Leg Day", "Full Body", "Upper Body", "Lower Body"]
+    if title in strength_workouts:
+        training_type_simple = "Kraft"
+    else:
+        training_type_simple = "Cardio"
 
-        person_df = pd.DataFrame([person])
-        person_df = person_df.reindex(columns=feature_columns, fill_value=0)
+    # Trainingskalorien berechnen
+    person = {
+        "Age": age,
+        "Duration": duration,
+        "Weight": weight,
+        "Height": height,
+        "Gender_Female": 1 if gender.lower() == "female" else 0,
+        "Gender_Male": 1 if gender.lower() == "male" else 0,
+        "Training_Type_Cardio": 1 if training_type_simple == "Cardio" else 0,
+        "Training_Type_Kraft": 1 if training_type_simple == "Kraft" else 0,
+    }
 
-        training_kcal = float(model.predict(person_df)[0])
+    person_df = pd.DataFrame([person])
+    person_df = person_df.reindex(columns=feature_columns, fill_value=0)
+    training_kcal = float(model.predict(person_df)[0])
+
 
     # -------------------------
     # CALCULATIONS
