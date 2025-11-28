@@ -87,11 +87,12 @@ def donut_chart(consumed, total, title, unit):
 
 
 def main():
-
     st.subheader("Pumpfessor Joe – Nutrition Planner")
     st.write("Automatic calculation of calories and protein based on training and body data.")
 
+    # -------------------------
     # MODEL LOAD
+    # -------------------------
     try:
         model, feature_columns = load_and_train_model()
     except Exception as e:
@@ -100,7 +101,7 @@ def main():
         return
 
     # -------------------------
-    # SQL → USER DATA
+    # USER DATA
     # -------------------------
     if "logged_in" not in st.session_state or not st.session_state.logged_in:
         st.error("Please log in first.")
@@ -113,19 +114,20 @@ def main():
         st.error("Could not load user profile.")
         return
 
+    # Hole die Daten für die Berechnung
     age = user["age"]
-    height = user["height"]
     weight = user["weight"]
-    gender = user.get("gender", "male")  # fallback falls gender fehlt
+    height = user["height"]
+    gender = user.get("gender", "male")
+    goal = user.get("goal", "Maintain")
 
-    # --- Personal & workout inputs ---
-    st.markdown("### Personal & workout information")
-
-    # Nur Trainingsart und Dauer anzeigen
+    st.markdown("### Workout information")
     training_type = st.selectbox("Training type", ["Cardio", "Kraft"])
     duration = st.number_input("Training duration (min)", 10, 240, 60)
 
+    # -------------------------
     # CALCULATIONS
+    # -------------------------
     person = {
         "Age": age,
         "Duration": duration,
@@ -136,7 +138,6 @@ def main():
         "Training_Type_Cardio": 1 if training_type.lower() == "cardio" else 0,
         "Training_Type_Kraft": 1 if training_type.lower() == "kraft" else 0,
     }
-
 
     person_df = pd.DataFrame([person])
     person_df = person_df.reindex(columns=feature_columns, fill_value=0)
@@ -157,7 +158,9 @@ def main():
     target_calories = max(target_calories, 1200)
     target_protein = protein_per_kg * weight
 
+    # -------------------------
     # MEAL LOGGING
+    # -------------------------
     if "meals" not in st.session_state:
         st.session_state.meals = []
 
@@ -190,6 +193,7 @@ def main():
     if st.session_state.meals:
         st.markdown("### Logged meals")
         st.table(pd.DataFrame(st.session_state.meals))
+
 
 
 if __name__ == "__main__":
