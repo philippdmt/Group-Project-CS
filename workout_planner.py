@@ -264,7 +264,8 @@ def main():
     st.subheader("Build a workout with Pumpfessor Joe")
     st.caption("Answer a few questions and get a suggested workout plan.")
 
-    title = st.text_input("Workout name:", "Push Day")
+    workout_options = ["Push Day", "Pull Day", "Leg Day", "Full Body", "Upper Body", "Lower Body"]
+    title = st.selectbox("Choose your workout type:", workout_options, index=0)
     minutes = st.slider("How many minutes do you have?", 15, 120, 45, 5)
 
     st.markdown(
