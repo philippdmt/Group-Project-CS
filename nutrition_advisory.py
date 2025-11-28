@@ -8,11 +8,26 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+# ===================== PAGE CONFIG =====================
 st.set_page_config(
     page_title="Nutrition Advisory",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Optional: CSS für volle Breite von Markdown/Container
+st.markdown(
+    """
+    <style>
+    /* max-width für Container auf 100% */
+    .css-1d391kg, .css-1avcm0n {
+        max-width: 100%;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # =============================================================================
 # CONFIG
 # =============================================================================
@@ -183,9 +198,7 @@ def load_and_prepare_data(path_or_url: str) -> pd.DataFrame:
     )
     return fitness_df
 
-# =============================================================================
-# FILTER / SEARCH / PLAN
-# =============================================================================
+# ===================== FILTER / SEARCH / PLAN =====================
 def filter_by_preferences(df: pd.DataFrame, diet_pref: str, allergies: List[str]) -> pd.DataFrame:
     diet_pref = (diet_pref or "omnivore").lower()
     allergies = [a.strip().lower() for a in allergies if a.strip()]
@@ -228,6 +241,7 @@ def search_recipes(
         base = base.sort_values("score", ascending=False)
     return base
 
+# ===================== PICK / DAILY PLAN =====================
 def pick_meal(df: pd.DataFrame, meal_type: str, target_cal: float, training_goal: str, pref_model: Optional[UserPreferenceModel]) -> Optional[pd.Series]:
     base = df[df["meal_type"].astype(str).str.contains(meal_type, case=False, na=False)]
     if base.empty:
@@ -257,9 +271,7 @@ def recommend_daily_plan(df: pd.DataFrame, daily_calories: float, training_goal:
     dinner = pick_meal(user_df, "dinner", dinner_cal, training_goal, pref_model)
     return {"Breakfast": (breakfast, breakfast_cal), "Lunch": (lunch, lunch_cal), "Dinner": (dinner, dinner_cal)}
 
-# =============================================================================
-# SESSION STATE
-# =============================================================================
+# ===================== SESSION STATE =====================
 def init_session_state():
     if "pref_model" not in st.session_state:
         st.session_state.pref_model = UserPreferenceModel()
@@ -293,9 +305,7 @@ def log_meal(row: pd.Series, meal_name: str):
     st.session_state.consumed["fat"] += entry["fat"]
     st.session_state.eaten_today.add(row["recipe_name"])
 
-# =============================================================================
-# RECIPE CARD
-# =============================================================================
+# ===================== RECIPE CARD =====================
 def show_recipe_card(
     row: pd.Series,
     key_prefix: str,
@@ -312,77 +322,65 @@ def show_recipe_card(
     recipe_name = row["recipe_name"]
     eaten = recipe_name in st.session_state.eaten_today
     rating_stage = st.session_state.rating_stage.get(recipe_name, "none")
-    container = st.container()
-    with container:
-        col_left, col_right = st.columns([1,2])
-        with col_left:
-            img_url = row.get("image_url","")
-            if isinstance(img_url,str) and img_url.strip():
-                st.image(img_url, width=240)
-            else:
-                st.write("No image available.")
-        with col_right:
-            st.subheader(recipe_name)
-            c1,c2,c3,c4 = st.columns(4)
-            c1.metric("Calories", f"{row['calories_per_serving']:.0f}")
-            c2.metric("Protein", f"{row['protein_g']:.1f} g")
-            c3.metric("Carbs", f"{row['carbs_g']:.1f} g")
-            c4.metric("Fat", f"{row['fat_g']:.1f} g")
-            st.markdown("**Ingredients (per serving)**")
-            for line in row.get("ingredient_lines_per_serving", []):
-                st.markdown(f"- {line}")
+
+    # Breitere Container
+    with st.container():
+        st.subheader(recipe_name)
+        img_url = row.get("image_url","")
+        if isinstance(img_url,str) and img_url.strip():
+            st.image(img_url, width=400)
+        else:
+            st.write("No image available.")
+        c1,c2,c3,c4 = st.columns(4)
+        c1.metric("Calories", f"{row['calories_per_serving']:.0f}")
+        c2.metric("Protein", f"{row['protein_g']:.1f} g")
+        c3.metric("Carbs", f"{row['carbs_g']:.1f} g")
+        c4.metric("Fat", f"{row['fat_g']:.1f} g")
+        st.markdown("**Ingredients (per serving)**")
+        for line in row.get("ingredient_lines_per_serving", []):
+            st.markdown(f"- {line}")
+
         st.markdown("---")
-        b0,b1,b2 = st.columns(3)
-        with b0:
-            if pd.notna(row.get("url",None)) and str(row["url"]).strip():
-                st.markdown(f"[Go to recipe]({row['url']})")
+        # Buttons
         if mode=="favourite":
-            with b1:
-                if st.button("Remove from favourite recipes", key=f"remove_{key_prefix}"):
-                    st.session_state.favourite_recipes.discard(row.name)
+            if st.button("Remove from favourite recipes", key=f"remove_{key_prefix}"):
+                st.session_state.favourite_recipes.discard(row.name)
             st.markdown("---")
             return
+
         if not eaten:
-            with b1:
-                if st.button("I have eaten this", key=f"eat_{key_prefix}"):
-                    log_meal(row, meal_name)
-                    st.session_state.rating_stage[recipe_name] = "none"
-            with b2:
-                if st.button("I don't like to eat this meal", key=f"skip_{key_prefix}"):
-                    if df is not None and pref_model is not None and meal_target_calories is not None and st.session_state.daily_plan is not None:
-                        user_df = filter_by_preferences(df,"omnivore",[])
-                        mt = str(row.get("meal_type","")).lower() or meal_name.lower()
-                        new_row = pick_meal(user_df, mt, meal_target_calories,"", pref_model)
-                        if new_row is not None and meal_name in st.session_state.daily_plan:
-                            st.session_state.daily_plan[meal_name]=(new_row,meal_target_calories)
+            if st.button("I have eaten this", key=f"eat_{key_prefix}"):
+                log_meal(row, meal_name)
+                st.session_state.rating_stage[recipe_name] = "none"
+            if st.button("I don't like to eat this meal", key=f"skip_{key_prefix}"):
+                if df is not None and pref_model is not None and meal_target_calories is not None and st.session_state.daily_plan is not None:
+                    user_df = filter_by_preferences(df,"omnivore",[])
+                    mt = str(row.get("meal_type","")).lower() or meal_name.lower()
+                    new_row = pick_meal(user_df, mt, meal_target_calories,"", pref_model)
+                    if new_row is not None and meal_name in st.session_state.daily_plan:
+                        st.session_state.daily_plan[meal_name]=(new_row,meal_target_calories)
             st.markdown("---")
             return
+
         if rating_stage=="none":
-            with b1:
-                if st.button("I liked this meal", key=f"like_{key_prefix}"):
-                    if pref_model is not None:
-                        pref_model.update_with_rating(row,+1)
-                    st.session_state.rating_stage[recipe_name]="liked"
-            with b2:
-                if st.button("I didn't like this meal", key=f"dislike_{key_prefix}"):
-                    if pref_model is not None:
-                        pref_model.update_with_rating(row,-1)
-                    st.session_state.rating_stage[recipe_name]="disliked"
+            if st.button("I liked this meal", key=f"like_{key_prefix}"):
+                if pref_model is not None:
+                    pref_model.update_with_rating(row,+1)
+                st.session_state.rating_stage[recipe_name]="liked"
+            if st.button("I didn't like this meal", key=f"dislike_{key_prefix}"):
+                if pref_model is not None:
+                    pref_model.update_with_rating(row,-1)
+                st.session_state.rating_stage[recipe_name]="disliked"
         elif rating_stage=="liked":
-            with b1:
-                if st.button("Save in favourites", key=f"fav_{key_prefix}"):
-                    st.session_state.favourite_recipes.add(row.name)
-                    st.session_state.rating_stage[recipe_name]="liked_saved"
-            with b2:
-                if st.button("Don't save in favourites", key=f"nofav_{key_prefix}"):
-                    st.session_state.rating_stage[recipe_name]="liked_nosave"
+            if st.button("Save in favourites", key=f"fav_{key_prefix}"):
+                st.session_state.favourite_recipes.add(row.name)
+                st.session_state.rating_stage[recipe_name]="liked_saved"
+            if st.button("Don't save in favourites", key=f"nofav_{key_prefix}"):
+                st.session_state.rating_stage[recipe_name]="liked_nosave"
         st.markdown("---")
 
-# =============================================================================
-# MAIN APP
-# =============================================================================
+# ===================== MAIN APP =====================
 def main(df=None):
-    st.set_page_config(page_title="Nutrition Advisory", layout="wide")
     init_session_state()
 
     # DataFrame aus Session-State verwenden
