@@ -9,21 +9,14 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 
+from database import get_user_data   # <-- SQL IMPORT
+
 PRIMARY_COLOR = "#007A3D"
 
-# ------------------------------------------------------------
-#   CSV SOURCE
-#   1. Try local "calories.csv"
-#   2. If missing, fall back to GitHub URL
-# ------------------------------------------------------------
 CSV_URL = "https://raw.githubusercontent.com/philippdmt/Protein_and_Calories/refs/heads/main/calories.csv"
 
 
-# -----------------------------
-# DATA + MODEL LOADING
-# -----------------------------
 def determine_training_type(heart_rate, age):
-    """Bestimme Trainingstyp anhand Herzfrequenz und Alter."""
     if heart_rate >= 0.6 * (220 - age):
         return "Cardio"
     else:
@@ -32,34 +25,21 @@ def determine_training_type(heart_rate, age):
 
 @st.cache_data
 def load_and_train_model():
-    """
-    Läd den Datensatz, trainiert ein Lineares Regressionsmodell
-    und gibt (modell, feature_spalten_liste) zurück.
-
-    Versucht zuerst 'calories.csv' lokal, fällt sonst auf CSV_URL zurück.
-    """
     try:
-        # 1) Versuch: lokale Datei
         calories = pd.read_csv("calories.csv")
     except FileNotFoundError:
-        # 2) Fallback: GitHub-URL
         calories = pd.read_csv(CSV_URL)
 
-    # Training_Type ableiten
     calories["Training_Type"] = calories.apply(
         lambda row: determine_training_type(row["Heart_Rate"], row["Age"]), axis=1
     )
 
-    # Zielvariable
     y = calories["Calories"]
 
-    # Features (ohne User_ID, Heart_Rate, Body_Temp, Calories)
     features = calories.drop(columns=["User_ID", "Heart_Rate", "Body_Temp", "Calories"])
 
-    # One-hot Encoding
     X = pd.get_dummies(features, columns=["Gender", "Training_Type"], drop_first=False)
 
-    # Train/Test Split
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
 
     model = LinearRegression()
@@ -68,20 +48,13 @@ def load_and_train_model():
     return model, X.columns.tolist()
 
 
-# -----------------------------
-# BMR CALCULATION
-# -----------------------------
 def grundumsatz(age, weight, height, gender):
-    """Mifflin–St Jeor BMR equation."""
     if gender.lower() == "male":
         return 10 * weight + 6.25 * height - 5 * age + 5
     else:
         return 10 * weight + 6.25 * height - 5 * age - 161
 
 
-# -----------------------------
-# DONUT CHART
-# -----------------------------
 def donut_chart(consumed, total, title, unit):
     if total <= 0:
         total = 1
@@ -89,7 +62,6 @@ def donut_chart(consumed, total, title, unit):
     consumed = max(0, consumed)
     remaining = max(total - consumed, 0)
 
-    # Farbe: grün normal, rot wenn Ziel überschritten
     color = "#007A3D" if consumed <= total else "#FF0000"
 
     fig, ax = plt.subplots(figsize=(3, 3), facecolor="white")
@@ -115,51 +87,57 @@ def donut_chart(consumed, total, title, unit):
     st.pyplot(fig)
 
 
-# -----------------------------
-# MAIN (EMBEDDED INTO APP.PY)
-# -----------------------------
 def main():
-    # Kein st.set_page_config hier – das macht app.py schon!
-
-    # In app.py steht bereits:
-    # st.header("Calorie tracker"), st.divider(), Container, etc.
-    # Hier also "eine Ebene tiefer" bleiben:
     st.subheader("Pumpfessor Joe – Nutrition Planner")
-    st.write(
-        "Automatic calculation of calories and protein based on training and body data."
-    )
+    st.write("Automatic calculation of calories and protein based on training and body data.")
 
-    # Load ML model
+    # LOAD MODEL
     try:
         model, feature_columns = load_and_train_model()
     except Exception as e:
-        st.error("Error while loading the dataset / model. Check the CSV source.")
+        st.error("Error while loading dataset/model.")
         st.exception(e)
         return
 
-    # Initialize session state
-    if "meals" not in st.session_state:
-        st.session_state.meals = []
+    # -------------------------------------------
+    # 🚨 SQL: BENUTZERDATEN LADEN
+    # -------------------------------------------
+    if "loggedIn" not in st.session_state or not st.session_state["loggedIn"]:
+        st.error("Please log in first.")
+        return
 
-    # -----------------------------
-    # USER INPUT
-    # -----------------------------
+    username = st.session_state["username"]
+    user = get_user_data(username)
+
+    if not user:
+        st.error("User data could not be loaded.")
+        return
+
+    gender = user["gender"]
+    age = user["age"]
+    height = user["height"]
+    weight = user["weight"]
+
+    # -------------------------------------------
+    # TRAININGSDATEN (weiterhin Eingabe)
+    # -------------------------------------------
     st.markdown("### Personal & workout information")
+
     col1, col2 = st.columns(2)
     with col1:
-        gender = st.selectbox("Gender", ["Male", "Female"])
-        age = st.number_input("Age", 0, 100, 25)
-        height = st.number_input("Height (cm)", 120, 230, 180)
-        weight = st.number_input("Weight (kg)", 35, 200, 75)
+        st.write(f"**Gender:** {gender}")
+        st.write(f"**Age:** {age}")
+        st.write(f"**Height:** {height} cm")
+        st.write(f"**Weight:** {weight} kg")
 
     with col2:
         goal = st.selectbox("Goal", ["Cut", "Maintain", "Bulk"])
         training_type = st.selectbox("Training type", ["Cardio", "Kraft"])
         duration = st.number_input("Training duration (min)", 10, 240, 60)
 
-    # -----------------------------
+    # -------------------------------------------
     # CALCULATIONS
-    # -----------------------------
+    # -------------------------------------------
     person = {
         "Age": age,
         "Duration": duration,
@@ -177,7 +155,7 @@ def main():
     training_kcal = float(model.predict(person_df)[0])
     bmr = grundumsatz(age, weight, height, gender)
 
-    # Goal adjustments
+    # GOAL
     if goal.lower() == "bulk":
         target_calories = bmr + training_kcal + 300
         protein_per_kg = 2.0
@@ -191,9 +169,9 @@ def main():
     target_calories = max(target_calories, 1200)
     target_protein = protein_per_kg * weight
 
-    # -----------------------------
+    # -------------------------------------------
     # MEAL LOGGING
-    # -----------------------------
+    # -------------------------------------------
     st.markdown("### Log meals")
     with st.form("meal_form"):
         m1, m2, m3 = st.columns([2, 1, 1])
@@ -204,26 +182,15 @@ def main():
 
     if submitted:
         st.session_state.meals.append(
-            {
-                "meal": meal_name,
-                "calories": float(meal_cal),
-                "protein": float(meal_prot),
-            }
+            {"meal": meal_name, "calories": float(meal_cal), "protein": float(meal_prot)}
         )
 
-    # Reset meals
     if st.button("Reset meals"):
         st.session_state.meals = []
 
-    # -----------------------------
-    # TOTALS
-    # -----------------------------
     total_cal = sum(m["calories"] for m in st.session_state.meals)
     total_prot = sum(m["protein"] for m in st.session_state.meals)
 
-    # -----------------------------
-    # DONUT CHARTS
-    # -----------------------------
     st.markdown("### Daily targets")
     c1, c2 = st.columns(2)
     with c1:
@@ -231,9 +198,6 @@ def main():
     with c2:
         donut_chart(total_prot, target_protein, "Protein", "g")
 
-    # -----------------------------
-    # MEAL TABLE
-    # -----------------------------
     if st.session_state.meals:
         st.markdown("### Logged meals")
         st.table(pd.DataFrame(st.session_state.meals))
