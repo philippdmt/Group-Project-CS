@@ -319,65 +319,90 @@ def show_recipe_card(
     if row is None:
         st.write("No suitable recipe found.")
         return
+
     recipe_name = row["recipe_name"]
     eaten = recipe_name in st.session_state.eaten_today
     rating_stage = st.session_state.rating_stage.get(recipe_name, "none")
 
-    # Breitere Container
+    # Breitere Container mit Bild links, Rest rechts
     with st.container():
-        st.subheader(recipe_name)
-        img_url = row.get("image_url","")
-        if isinstance(img_url,str) and img_url.strip():
-            st.image(img_url, width=400)
-        else:
-            st.write("No image available.")
-        c1,c2,c3,c4 = st.columns(4)
-        c1.metric("Calories", f"{row['calories_per_serving']:.0f}")
-        c2.metric("Protein", f"{row['protein_g']:.1f} g")
-        c3.metric("Carbs", f"{row['carbs_g']:.1f} g")
-        c4.metric("Fat", f"{row['fat_g']:.1f} g")
-        st.markdown("**Ingredients (per serving)**")
-        for line in row.get("ingredient_lines_per_serving", []):
-            st.markdown(f"- {line}")
+        col_left, col_right = st.columns([1, 5])  # Bild 1/6, Rest 5/6
 
-        st.markdown("---")
-        # Buttons
-        if mode=="favourite":
-            if st.button("Remove from favourite recipes", key=f"remove_{key_prefix}"):
-                st.session_state.favourite_recipes.discard(row.name)
+        # ---------- Linke Spalte: Bild ----------
+        with col_left:
+            img_url = row.get("image_url", "")
+            if img_url and img_url.strip():
+                st.image(img_url, width=240)
+            else:
+                st.write("No image available.")
+
+        # ---------- Rechte Spalte: Infos ----------
+        with col_right:
+            st.subheader(recipe_name)
+
+            # Nährwerte nebeneinander
+            n1, n2, n3, n4 = st.columns(4)
+            n1.metric("Calories", f"{row['calories_per_serving']:.0f}")
+            n2.metric("Protein", f"{row['protein_g']:.1f} g")
+            n3.metric("Carbs", f"{row['carbs_g']:.1f} g")
+            n4.metric("Fat", f"{row['fat_g']:.1f} g")
+
+            # Zutatenliste
+            st.markdown("**Ingredients (per serving)**")
+            for line in row.get("ingredient_lines_per_serving", []):
+                st.markdown(f"- {line}")
+
             st.markdown("---")
-            return
 
-        if not eaten:
-            if st.button("I have eaten this", key=f"eat_{key_prefix}"):
-                log_meal(row, meal_name)
-                st.session_state.rating_stage[recipe_name] = "none"
-            if st.button("I don't like to eat this meal", key=f"skip_{key_prefix}"):
-                if df is not None and pref_model is not None and meal_target_calories is not None and st.session_state.daily_plan is not None:
-                    user_df = filter_by_preferences(df,"omnivore",[])
-                    mt = str(row.get("meal_type","")).lower() or meal_name.lower()
-                    new_row = pick_meal(user_df, mt, meal_target_calories,"", pref_model)
-                    if new_row is not None and meal_name in st.session_state.daily_plan:
-                        st.session_state.daily_plan[meal_name]=(new_row,meal_target_calories)
+            # ---------------- Buttons je nach Modus ----------------
+            if mode == "favourite":
+                if st.button("Remove from favourite recipes", key=f"remove_{key_prefix}"):
+                    st.session_state.favourite_recipes.discard(row.name)
+                st.markdown("---")
+                return
+
+            # Wenn noch nicht gegessen
+            if not eaten:
+                b1, b2 = st.columns([1, 1])
+                with b1:
+                    if st.button("I have eaten this", key=f"eat_{key_prefix}"):
+                        log_meal(row, meal_name)
+                        st.session_state.rating_stage[recipe_name] = "none"
+                with b2:
+                    if st.button("I don't like this meal", key=f"skip_{key_prefix}"):
+                        if df is not None and pref_model is not None and meal_target_calories is not None and st.session_state.daily_plan is not None:
+                            user_df = filter_by_preferences(df, "omnivore", [])
+                            mt = str(row.get("meal_type", "")).lower() or meal_name.lower()
+                            new_row = pick_meal(user_df, mt, meal_target_calories, "", pref_model)
+                            if new_row is not None and meal_name in st.session_state.daily_plan:
+                                st.session_state.daily_plan[meal_name] = (new_row, meal_target_calories)
+                st.markdown("---")
+                return
+
+            # Bewertungs-Logik
+            if rating_stage == "none":
+                b1, b2 = st.columns([1, 1])
+                with b1:
+                    if st.button("I liked this meal", key=f"like_{key_prefix}"):
+                        if pref_model is not None:
+                            pref_model.update_with_rating(row, +1)
+                        st.session_state.rating_stage[recipe_name] = "liked"
+                with b2:
+                    if st.button("I didn't like this meal", key=f"dislike_{key_prefix}"):
+                        if pref_model is not None:
+                            pref_model.update_with_rating(row, -1)
+                        st.session_state.rating_stage[recipe_name] = "disliked"
+            elif rating_stage == "liked":
+                b1, b2 = st.columns([1, 1])
+                with b1:
+                    if st.button("Save in favourites", key=f"fav_{key_prefix}"):
+                        st.session_state.favourite_recipes.add(row.name)
+                        st.session_state.rating_stage[recipe_name] = "liked_saved"
+                with b2:
+                    if st.button("Don't save in favourites", key=f"nofav_{key_prefix}"):
+                        st.session_state.rating_stage[recipe_name] = "liked_nosave"
             st.markdown("---")
-            return
 
-        if rating_stage=="none":
-            if st.button("I liked this meal", key=f"like_{key_prefix}"):
-                if pref_model is not None:
-                    pref_model.update_with_rating(row,+1)
-                st.session_state.rating_stage[recipe_name]="liked"
-            if st.button("I didn't like this meal", key=f"dislike_{key_prefix}"):
-                if pref_model is not None:
-                    pref_model.update_with_rating(row,-1)
-                st.session_state.rating_stage[recipe_name]="disliked"
-        elif rating_stage=="liked":
-            if st.button("Save in favourites", key=f"fav_{key_prefix}"):
-                st.session_state.favourite_recipes.add(row.name)
-                st.session_state.rating_stage[recipe_name]="liked_saved"
-            if st.button("Don't save in favourites", key=f"nofav_{key_prefix}"):
-                st.session_state.rating_stage[recipe_name]="liked_nosave"
-        st.markdown("---")
 
 # ===================== MAIN APP =====================
 def main(df=None):
