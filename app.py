@@ -9,6 +9,12 @@ import workout_planner  # teammates' workout builder
 import workout_calendar  # teammates' calendar
 import calorie_tracker   # ML-based calorie & protein tracker
 import nutrition_advisory
+from nutrition_advisory import main as nutrition_main, load_and_prepare_data, DATA_URL
+
+# DataFrame nur einmal beim App-Start laden
+if "recipes_df" not in st.session_state:
+    with st.spinner("Loading recipe data..."):
+        st.session_state.recipes_df = load_and_prepare_data(DATA_URL)
 
 
 # ---------- basic page setup ----------
