@@ -59,12 +59,14 @@ LOGO_IMAGE = load_logo("unifit_logo.png")
 st.markdown(
     f"""
     <style>
-    /* main app container */
+    /* main app container: max-width removed so pages can be full width */
     .block-container {{
         padding-top: 2rem;
         padding-bottom: 2rem;
-        max-width: 1000px;
-        margin: auto;
+        max-width: 100% !important;
+        margin: 0 auto !important;
+        padding-left: 2rem;
+        padding-right: 2rem;
     }}
 
     /* white background + green text for header bar */
@@ -610,10 +612,87 @@ def show_pumpfessor_joe(page_name: str):
 # APP PAGES
 # =========================================================
 
-# ... alle bisherigen Imports + CSS + Auth-Funktionen bleiben gleich ...
+# =========================================================
+# PROFILE DB ACCESS (updated copy is below too)
+# =========================================================
+
+def get_profile(user_id: int):
+    """Fetch profile info for a given user_id."""
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT age, weight, height,
+               username, allergies, training_type, diet_preferences
+        FROM profiles WHERE user_id = ?
+        """,
+        (user_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            "age": row[0],
+            "weight": row[1],
+            "height": row[2],
+            "username": row[3],
+            "allergies": row[4],
+            "training_type": row[5],
+            "diet_preferences": row[6],
+        }
+
+    return {
+        "age": None,
+        "weight": None,
+        "height": None,
+        "username": None,
+        "allergies": None,
+        "training_type": None,
+        "diet_preferences": None,
+    }
+
+
+def update_profile(
+    user_id: int,
+    age: int,
+    weight: float,
+    height: float,
+    username: str,
+    allergies: str,
+    training_type: str,
+    diet_preferences: str,
+):
+    """Update profile values for a given user_id."""
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        UPDATE profiles
+        SET age = ?, weight = ?, height = ?,
+            username = ?, allergies = ?,
+            training_type = ?, diet_preferences = ?
+        WHERE user_id = ?
+        """,
+        (
+            age,
+            weight,
+            height,
+            username,
+            allergies,
+            training_type,
+            diet_preferences,
+            user_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
 
 # =========================================================
-# PROFILE DB ACCESS
+# PROFILE DB ACCESS (updated with gender + goal) - KEEP this one too
 # =========================================================
 
 def get_profile(user_id: int):
@@ -714,12 +793,12 @@ def show_profile_page():
     st.write("Basic information that can be used by the trainer and nutrition logic later.")
     st.divider()
 
-    col_left, col_center, col_right = st.columns([1, 2, 1])
-
-    with col_center:
+    # Use a full-width container for the profile form so it can expand
+    with st.container():
         with st.container(border=True):
             st.subheader("Your data")
 
+            # keep two-column layout for form fields inside the full width container
             c1, c2 = st.columns(2)
 
             with c1:
@@ -825,42 +904,42 @@ def show_profile_page():
                 )
                 st.success("Profile saved.")
 
-        st.divider()
-        st.subheader("Current profile data")
+    st.divider()
+    st.subheader("Current profile data")
 
-        # reload profile from DB (in case it changed)
-        profile = get_profile(user_id)
+    # reload profile from DB (in case it changed)
+    profile = get_profile(user_id)
 
-        st.write(f"**Username:** {profile['username'] or 'Not set'}")
-        st.write(f"**Age:** {profile['age'] or 'Not set'} years")
-        st.write(f"**Weight:** {profile['weight'] or 'Not set'} kg")
-        st.write(f"**Height:** {profile['height'] or 'Not set'} cm")
-        st.write(f"**Gender:** {profile['gender']}")
-        st.write(f"**Goal:** {profile['goal']}")
-        st.write(f"**Training style:** {profile['training_type'] or 'Not set'}")
-        st.write(f"**Diet preference:** {profile['diet_preferences'] or 'Not set'}")
-        st.write(f"**Allergies:** {profile['allergies'] or 'None noted'}")
+    st.write(f"**Username:** {profile['username'] or 'Not set'}")
+    st.write(f"**Age:** {profile['age'] or 'Not set'} years")
+    st.write(f"**Weight:** {profile['weight'] or 'Not set'} kg")
+    st.write(f"**Height:** {profile['height'] or 'Not set'} cm")
+    st.write(f"**Gender:** {profile['gender']}")
+    st.write(f"**Goal:** {profile['goal']}")
+    st.write(f"**Training style:** {profile['training_type'] or 'Not set'}")
+    st.write(f"**Diet preference:** {profile['diet_preferences'] or 'Not set'}")
+    st.write(f"**Allergies:** {profile['allergies'] or 'None noted'}")
 
-        # --- Profile completeness indicator ---
-        fields_for_completeness = [
-            profile["username"],
-            profile["age"],
-            profile["weight"],
-            profile["height"],
-            profile["training_type"],
-            profile["diet_preferences"],
-            profile["gender"],
-            profile["goal"],
-        ]
-        filled_fields = sum(
-            1
-            for v in fields_for_completeness
-            if v not in (None, 0, 0.0, "", "Not set")
-        )
-        completeness = filled_fields / len(fields_for_completeness)
-        st.write("")
-        st.write("Profile completeness:")
-        st.progress(completeness)
+    # --- Profile completeness indicator ---
+    fields_for_completeness = [
+        profile["username"],
+        profile["age"],
+        profile["weight"],
+        profile["height"],
+        profile["training_type"],
+        profile["diet_preferences"],
+        profile["gender"],
+        profile["goal"],
+    ]
+    filled_fields = sum(
+        1
+        for v in fields_for_completeness
+        if v not in (None, 0, 0.0, "", "Not set")
+    )
+    completeness = filled_fields / len(fields_for_completeness)
+    st.write("")
+    st.write("Profile completeness:")
+    st.progress(completeness)
 
 
 
@@ -870,8 +949,8 @@ def show_trainer_page():
     st.write("Build your personalized workout and see your training calendar with Pumpfessor Joe 🧠💪")
     st.divider()
 
-    col_left, col_center, col_right = st.columns([1, 2, 1])
-    with col_center:
+    # Use full-width container so embedded modules can expand across the page
+    with st.container():
         with st.container(border=True):
             tabs = st.tabs(["Workout builder", "Training calendar"])
 
@@ -887,8 +966,7 @@ def show_calorie_tracker_page():
     st.header("Calorie tracker")
     st.divider()
 
-    col_left, col_center, col_right = st.columns([1, 2, 1])
-    with col_center:
+    with st.container():
         with st.container(border=True):
             calorie_tracker.main()
 
@@ -898,8 +976,7 @@ def show_nutrition_page():
     st.header("Nutrition adviser")
     st.divider()
 
-    col_left, col_center, col_right = st.columns([1, 2, 1])
-    with col_center:
+    with st.container():
         with st.container(border=True):
             # ruft das externe Modul auf
             nutrition_advisory.main()
@@ -909,8 +986,7 @@ def show_progress_page():
     st.header("Progress")
     st.divider()
 
-    col_left, col_center, col_right = st.columns([1, 2, 1])
-    with col_center:
+    with st.container():
         with st.container(border=True):
             st.subheader("Demo progress (to be replaced with real data)")
 
