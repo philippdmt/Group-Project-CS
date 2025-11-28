@@ -114,16 +114,31 @@ def main():
         st.error("Could not load user profile.")
         return
 
-    # Hole die Daten für die Berechnung
+    # User info
     age = user["age"]
     weight = user["weight"]
     height = user["height"]
     gender = user.get("gender", "male")
     goal = user.get("goal", "Maintain")
 
-    st.markdown("### Workout information")
-    training_type = st.selectbox("Training type", ["Cardio", "Kraft"])
-    duration = st.number_input("Training duration (min)", 10, 240, 60)
+    # -------------------------
+    # WORKOUT DATA FROM TRAINER
+    # -------------------------
+    if "current_workout" in st.session_state:
+        # Workout aus Trainer übernehmen
+        current_workout = st.session_state["current_workout"]
+        duration = current_workout["minutes"]
+
+        # Mapping: Push/Pull/Leg etc. -> Kraft, alles andere -> Cardio
+        strength_workouts = ["Push Day", "Pull Day", "Leg Day", "Full Body", "Upper Body", "Lower Body"]
+        if current_workout["title"] in strength_workouts:
+            training_type_simple = "Kraft"
+        else:
+            training_type_simple = "Cardio"
+    else:
+        # Fallback: manuelle Eingabe (falls kein Workout aus Trainer)
+        training_type_simple = st.selectbox("Training type", ["Cardio", "Kraft"])
+        duration = st.number_input("Training duration (min)", 10, 240, 60)
 
     # -------------------------
     # CALCULATIONS
@@ -135,8 +150,8 @@ def main():
         "Height": height,
         "Gender_Female": 1 if gender.lower() == "female" else 0,
         "Gender_Male": 1 if gender.lower() == "male" else 0,
-        "Training_Type_Cardio": 1 if training_type.lower() == "cardio" else 0,
-        "Training_Type_Kraft": 1 if training_type.lower() == "kraft" else 0,
+        "Training_Type_Cardio": 1 if training_type_simple == "Cardio" else 0,
+        "Training_Type_Kraft": 1 if training_type_simple == "Kraft" else 0,
     }
 
     person_df = pd.DataFrame([person])
@@ -193,7 +208,6 @@ def main():
     if st.session_state.meals:
         st.markdown("### Logged meals")
         st.table(pd.DataFrame(st.session_state.meals))
-
 
 
 if __name__ == "__main__":
