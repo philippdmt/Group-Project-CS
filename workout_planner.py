@@ -268,6 +268,13 @@ def main():
     title = st.selectbox("Choose your workout type:", workout_options, index=0)
     minutes = st.slider("How many minutes do you have?", 15, 120, 45, 5)
 
+    # Speichern für den Calorie Tracker
+    st.session_state["current_workout"] = {
+        "title": title,
+        "minutes": minutes
+}
+
+
     st.markdown(
         f"<p style='color:{PRIMARY_COLOR};'><b>Are you sore anywhere?</b></p>",
         unsafe_allow_html=True,
