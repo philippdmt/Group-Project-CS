@@ -195,6 +195,8 @@ def main():
         # Rundung auf ganze Zahlen
         df_meals["calories"] = df_meals["calories"].round(0).astype(int)
         df_meals["protein"] = df_meals["protein"].round(0).astype(int)
+        # Index bei 1 beginnen lassen
+        df_meals.index = range(1, len(df_meals) + 1)
         st.table(df_meals)
 
 
