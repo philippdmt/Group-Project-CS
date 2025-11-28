@@ -175,49 +175,48 @@ def get_db():
 
 
 def create_tables():
-    """Create tables for users and profiles if they do not exist
-    and ensure new columns are present."""
+    """Create users and profiles tables if they don't exist, add missing columns."""
     conn = get_db()
     cur = conn.cursor()
 
     # users table
-    cur.execute(
-        """
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL
         )
-        """
-    )
+    """)
 
-    # profiles table (extended)
-    cur.execute(
-        """
+    # profiles table
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS profiles (
             user_id INTEGER UNIQUE,
             age INTEGER,
             weight REAL,
             height REAL,
-            username TEXT,
-            allergies TEXT,
-            training_type TEXT,
-            diet_preferences TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
-        """
-    )
+    """)
 
-    # If DB was created earlier without new columns, try to add them
-    for col in ["username", "allergies", "training_type", "diet_preferences"]:
+    # add missing columns if not exist
+    additional_cols = [
+        "username TEXT",
+        "allergies TEXT",
+        "training_type TEXT",
+        "diet_preferences TEXT",
+        "gender TEXT DEFAULT 'Male'",
+        "goal TEXT DEFAULT 'Maintain'"
+    ]
+    for col_def in additional_cols:
         try:
-            cur.execute(f"ALTER TABLE profiles ADD COLUMN {col} TEXT")
+            cur.execute(f"ALTER TABLE profiles ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
-            # column already exists -> ignore
-            pass
+            pass  # column already exists
 
     conn.commit()
     conn.close()
+
 
 
 def hash_password(password: str) -> str:
