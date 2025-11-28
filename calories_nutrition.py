@@ -301,6 +301,8 @@ def search_recipes(
         base = base[base]
     if pref_model is not None and not base.empty:
         base = base.copy()
+        if isinstance(base, pd.Series):
+            base = base.to_frame().T  # in DataFrame mit einer Zeile umwandeln
         base["score"] = base.apply(lambda row: pref_model.score_recipe(row), axis=1)
         base = base.sort_values("score", ascending=False)
     return base
