@@ -191,7 +191,12 @@ def main():
 
     if st.session_state.meals:
         st.markdown("### Logged meals")
-        st.table(pd.DataFrame(st.session_state.meals))
+        df_meals = pd.DataFrame(st.session_state.meals)
+        # Rundung auf ganze Zahlen
+        df_meals["calories"] = df_meals["calories"].round(0).astype(int)
+        df_meals["protein"] = df_meals["protein"].round(0).astype(int)
+        st.table(df_meals)
+
 
 
 if __name__ == "__main__":
