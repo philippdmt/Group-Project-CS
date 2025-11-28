@@ -542,21 +542,49 @@ def main(df=None):
         gender = user.get("gender", "male")
         goal = user.get("goal", "Maintain")
 
-        st.markdown("### Workout information")
-        training_type = st.selectbox("Training type", ["Cardio", "Kraft"], key="ct_training_type")
-        duration = st.number_input("Training duration (min)", 10, 240, 60, key="ct_duration")
+        # ===============================
+    # AUTOMATIC WORKOUT IMPORT
+    # ===============================
+
+    workout = st.session_state.get("current_workout", None)
+
+    if workout is None:
+        st.info("No workout logged today. Training calories will be 0.")
+        training_type = "kraft"   # ML braucht Kraft vs Cardio → default
+        duration = 0
+    else:
+        # Extract from workout planner
+        w_title = workout.get("title", "").lower()
+        duration = workout.get("minutes", 0)
+
+        # Map workout title to ML training types
+        kraft_keywords = ["push", "pull", "leg", "full body", "upper", "lower"]
+
+        if any(k in w_title for k in kraft_keywords):
+            training_type = "kraft"
+        else:
+            training_type = "kraft"   # fallback (Cardio gibt es nicht)
+
+    # Show workout info to user
+        st.markdown("### Workout summary")
+
+    if duration == 0:
+        st.write("No training logged today.")
+    else:
+        st.success(f"Today's workout: **{workout['title']}** — {duration} minutes")
 
         # ML input
-        person = {
+       person = {
             "Age": age,
             "Duration": duration,
             "Weight": weight,
             "Height": height,
             "Gender_Female": 1 if gender.lower() == "female" else 0,
             "Gender_Male": 1 if gender.lower() == "male" else 0,
-            "Training_Type_Cardio": 1 if training_type.lower() == "cardio" else 0,
-            "Training_Type_Kraft": 1 if training_type.lower() == "kraft" else 0,
+            "Training_Type_Cardio": 1 if training_type == "cardio" else 0,
+            "Training_Type_Kraft": 1 if training_type == "kraft" else 0,
         }
+
 
         person_df = pd.DataFrame([person])
         person_df = person_df.reindex(columns=feature_columns, fill_value=0)
