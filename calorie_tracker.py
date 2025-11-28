@@ -111,7 +111,6 @@ def main():
         st.error("Could not load user profile.")
         return
 
-    # User info
     age = user["age"]
     weight = user["weight"]
     height = user["height"]
@@ -169,11 +168,24 @@ def main():
     target_protein = protein_per_kg * weight
 
     # -------------------------
-    # MEAL LOGGING
+    # DAILY TARGET CHARTS (Doughnut) – zuerst anzeigen
     # -------------------------
     if "meals" not in st.session_state:
         st.session_state.meals = []
 
+    total_cal = sum(m["calories"] for m in st.session_state.meals)
+    total_prot = sum(m["protein"] for m in st.session_state.meals)
+
+    st.markdown("### Daily targets")
+    c1, c2 = st.columns(2)
+    with c1:
+        donut_chart(total_cal, target_calories, "Calories", "kcal")
+    with c2:
+        donut_chart(total_prot, target_protein, "Protein", "g")
+
+    # -------------------------
+    # MEAL LOGGING – danach
+    # -------------------------
     st.markdown("### Log meals")
     with st.form("meal_form"):
         m1, m2, m3 = st.columns([2, 1, 1])
@@ -189,16 +201,6 @@ def main():
 
     if st.button("Reset meals"):
         st.session_state.meals = []
-
-    total_cal = sum(m["calories"] for m in st.session_state.meals)
-    total_prot = sum(m["protein"] for m in st.session_state.meals)
-
-    st.markdown("### Daily targets")
-    c1, c2 = st.columns(2)
-    with c1:
-        donut_chart(total_cal, target_calories, "Calories", "kcal")
-    with c2:
-        donut_chart(total_prot, target_protein, "Protein", "g")
 
     if st.session_state.meals:
         st.markdown("### Logged meals")
