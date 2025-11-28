@@ -380,9 +380,14 @@ def main(df=None):
     st.set_page_config(page_title="Nutrition Advisory", layout="wide")
     init_session_state()
 
+    # DataFrame aus Session-State verwenden
     if df is None:
-        st.error("Recipe data not loaded.")
-        return
+        df = st.session_state.get("recipes_df", None)
+
+    if df is None:
+        st.info("Loading recipe data...")
+        df = load_and_prepare_data(DATA_URL)
+        st.session_state.recipes_df = df
 
     profile = {
         "username": "Guest",
@@ -391,8 +396,6 @@ def main(df=None):
         "diet_pref": "omnivore",
         "allergies": []
     }
-
-    # restlicher Code unverändert, nur df verwenden statt load_and_prepare_data(DATA_URL)
 
     tab_suggested, tab_search, tab_fav, tab_log = st.tabs(["Suggested recipes","Search recipes","Favourite recipes","Meals eaten"])
 
