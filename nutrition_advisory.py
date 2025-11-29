@@ -651,9 +651,12 @@ def main(df=None):
                 "protein": float(meal_prot),
             })
 
-        if st.button("Reset manual meals"):
+        if st.button("Reset day (all meals)"):
             st.session_state.ct_meals = []
-
-
+            st.session_state.meal_log = []
+            st.session_state.eaten_today = set()
+            st.session_state.rating_stage = {}
+            st.success("All meals for today have been reset.")
+    
 if __name__ == "__main__":
     main()
