@@ -385,7 +385,7 @@ def show_recipe_card(
                 return
             # -------------------------- NOT EATEN YET --------------------------
             # -------------------------- BUTTON LAYOUT --------------------------
-            
+            if not eaten
 
                 col_left, col_mid, col_right = st.columns(3)
 
@@ -406,7 +406,7 @@ def show_recipe_card(
                         if new_row is not None:
                             st.session_state.daily_plan[meal_name] = (new_row, meal_target_calories)
 
-                
+                return
 # MAIN APP
 
 def main(df=None):
