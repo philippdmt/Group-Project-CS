@@ -643,7 +643,17 @@ def main(df=None):
         if not combined:
             st.info("No meals eaten today.")
         else:
-            st.table(pd.DataFrame(combined))
+            df_combined = pd.DataFrame(combined).copy()
+
+            # ---- HIER: Werte ohne Nachkommastellen ----
+            df_combined["Calories"] = df_combined["Calories"].astype(int)
+            df_combined["Protein (g)"] = df_combined["Protein (g)"].astype(int)
+
+            # ---- HIER: Index bei 1 starten ----
+            df_combined.index = df_combined.index + 1
+
+            st.table(df_combined)
+
 
         st.markdown("### Add additional meal")
 
