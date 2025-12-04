@@ -361,8 +361,20 @@ def show_recipe_card(
             n4.metric("Fat", f"{row['fat_g']:.1f} g")
 
             st.markdown("**Ingredients (per serving)**")
-            for line in row.get("ingredient_lines_per_serving", []):
+
+            ingredients = row.get("ingredient_lines_per_serving", [])
+
+            # Nur die ersten drei anzeigen
+            first_three = ingredients[:3]
+            for line in first_three:
                 st.markdown(f"- {line}")
+
+            # Wenn mehr als 3 Zutaten existieren → Expander anzeigen
+            if len(ingredients) > 3:
+                with st.expander("Show more ingredients"):
+                    for line in ingredients[3:]:
+                        st.markdown(f"- {line}")
+
 
             st.markdown("---")
 
