@@ -371,6 +371,12 @@ def show_recipe_card(
                 if st.button("Remove from favourite recipes", key=f"rmfav_{key_prefix}"):
                     st.session_state.favourite_recipes.discard(row.name)
                 return
+            # -------------------------- INSTANT LIKE BUTTON --------------------------
+            if mode == "default":
+                if st.button("I like this", key=f"instantfav_{key_prefix}"):
+                    st.session_state.favourite_recipes.add(row.name)
+                    st.success("Added to favourites!")
+                    return
 
             # -------------------------- NOT EATEN YET --------------------------
             if not eaten:
