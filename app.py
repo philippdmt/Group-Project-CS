@@ -1,41 +1,45 @@
 import streamlit as st
-# Ganz am Anfang: breites Layout für die gesamte App
-st.set_page_config(
-    page_title="Fitness App",
-    layout="wide",          # das sorgt dafür, dass alles breit angezeigt wird
-    initial_sidebar_state="expanded"
-)
-import sqlite3
-import hashlib
-import re  # password + email checks
-import pandas as pd  # demo chart on Progress page
-import base64  # for background image + logo
 
-import workout_planner  # teammates' workout builder
-import workout_calendar  # teammates' calendar
-import calorie_tracker   # ML-based calorie & protein tracker
-import nutrition_advisory
-import calories_nutrition
-from nutrition_advisory import main as nutrition_main, load_and_prepare_data, DATA_URL
+# =========================================================
+# BASIC PAGE SETUP  (MUST BE FIRST STREAMLIT COMMAND)
+# =========================================================
 
-# DataFrame nur einmal beim App-Start laden
-if "recipes_df" not in st.session_state:
-    with st.spinner("Loading recipe data..."):
-        st.session_state.recipes_df = load_and_prepare_data(DATA_URL)
-
-
-# ---------- basic page setup ----------
 st.set_page_config(
     page_title="UniFit Coach",
-    page_icon="💪",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-# ---------- colors ----------
-PRIMARY_GREEN = "#007A3D"  # approx. HSG green
+# =========================================================
+# IMPORTS
+# =========================================================
+
+import sqlite3
+import hashlib
+import re
+import pandas as pd
+import base64
+
+from openai import OpenAI  # OpenAI client
+
+import workout_planner
+import workout_calendar
+import calorie_tracker
+import nutrition_advisory
+import calories_nutrition
+from nutrition_advisory import load_and_prepare_data, DATA_URL
 
 
-# ---------- helper: load image as base64 for login background ----------
+PRIMARY_GREEN = "#007A3D"  # HSG-like green
+
+# OpenAI client (expects OPENAI_API_KEY in environment)
+client = OpenAI()
+
+
+# =========================================================
+# IMAGE HELPERS
+# =========================================================
+
 def get_base64_of_image(path: str) -> str:
     """Read a local image file and return it as base64 string."""
     with open(path, "rb") as f:
@@ -51,16 +55,20 @@ def load_logo(path: str) -> str:
         return ""
 
 
-# image + logo files must exist in the same folder as app.py
+# Files must exist next to app.py
 BACKGROUND_IMAGE = get_base64_of_image("background_pitch.jpg")
 LOGO_IMAGE = load_logo("unifit_logo.png")
+PUMPFESSOR_IMAGE = load_logo("pumpfessorjoe.png")  # Pumpfessor Joe avatar
 
 
-# ---------- GLOBAL CSS (theme) ----------
+# =========================================================
+# GLOBAL CSS (APP THEME)
+# =========================================================
+
 st.markdown(
     f"""
     <style>
-    /* main app container: max-width removed so pages can be full width */
+    /* main app container: full-width layout (overridden on login page) */
     .block-container {{
         padding-top: 2rem;
         padding-bottom: 2rem;
@@ -70,14 +78,14 @@ st.markdown(
         padding-right: 2rem;
     }}
 
-    /* white background + green text for header bar */
+    /* white header bar */
     [data-testid="stHeader"] {{
         background-color: #FFFFFF !important;
         color: {PRIMARY_GREEN};
         box-shadow: none !important;
     }}
 
-    /* generic buttons in main area (Login, Save profile, etc.) */
+    /* generic buttons in main area */
     .stButton > button {{
         border-radius: 999px;
         background-color: {PRIMARY_GREEN};
@@ -92,18 +100,18 @@ st.markdown(
         color: #ffffff;
     }}
 
-    /* sidebar background: light grey with subtle border */
+    /* sidebar background */
     [data-testid="stSidebar"] {{
         background: #f5f7f6;
         border-right: 1px solid rgba(0, 0, 0, 0.05);
     }}
 
-    /* default text elements in green */
+    /* default text */
     p, span, label, .stMarkdown, .stText, .stCaption {{
         color: {PRIMARY_GREEN};
     }}
 
-    /* headings in HSG green */
+    /* headings */
     h1, h2, h3, h4 {{
         color: {PRIMARY_GREEN};
     }}
@@ -113,7 +121,7 @@ st.markdown(
         border-radius: 1rem !important;
     }}
 
-    /* ---- number inputs (Age, Weight, Height) styled like pills ---- */
+    /* number inputs */
     div[data-testid="stNumberInput"] input {{
         background-color: #ffffff !important;
         color: {PRIMARY_GREEN} !important;
@@ -121,7 +129,6 @@ st.markdown(
         border: 1px solid {PRIMARY_GREEN} !important;
         padding: 0.25rem 0.75rem !important;
     }}
-
     div[data-testid="stNumberInput"] input:focus {{
         outline: none !important;
         border: 2px solid {PRIMARY_GREEN} !important;
@@ -129,21 +136,19 @@ st.markdown(
         background-color: #ffffff !important;
         color: {PRIMARY_GREEN} !important;
     }}
-
     div[data-testid="stNumberInput"] button {{
         background-color: #ffffff !important;
         color: {PRIMARY_GREEN} !important;
         border-radius: 999px !important;
         border: 1px solid {PRIMARY_GREEN} !important;
     }}
-
     div[data-testid="stNumberInput"] button:hover {{
         background-color: {PRIMARY_GREEN} !important;
         color: #ffffff !important;
         border-color: {PRIMARY_GREEN} !important;
     }}
 
-    /* ---- text & password inputs (login / register / reset) ---- */
+    /* text & password inputs */
     div[data-testid="stTextInput"] input,
     div[data-testid="stPasswordInput"] input {{
         background-color: #ffffff !important;
@@ -152,12 +157,10 @@ st.markdown(
         border: 1px solid {PRIMARY_GREEN} !important;
         padding: 0.4rem 0.75rem !important;
     }}
-
     div[data-testid="stTextInput"] input::placeholder,
     div[data-testid="stPasswordInput"] input::placeholder {{
         color: rgba(0, 122, 61, 0.6) !important;
     }}
-
     div[data-testid="stTextInput"] input:focus,
     div[data-testid="stPasswordInput"] input:focus {{
         outline: none !important;
@@ -179,6 +182,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 # =========================================================
 # DATABASE + SECURITY
 # =========================================================
@@ -191,48 +195,54 @@ def get_db():
 
 
 def create_tables():
-    """Create users and profiles tables if they don't exist, add missing columns."""
+    """Create users and profiles tables; add missing columns if needed."""
     conn = get_db()
     cur = conn.cursor()
 
     # users table
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL
         )
-    """)
+        """
+    )
 
-    # profiles table
-    cur.execute("""
+    # profiles table (base definition)
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS profiles (
             user_id INTEGER UNIQUE,
             age INTEGER,
             weight REAL,
             height REAL,
+            username TEXT,
+            allergies TEXT,
+            training_type TEXT,
+            diet_preferences TEXT,
+            gender TEXT DEFAULT 'Male',
+            goal TEXT DEFAULT 'Maintain',
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
-    """)
+        """
+    )
 
-    # add missing columns if not exist
+    # ensure new columns exist for older databases
     additional_cols = [
-        "username TEXT",
-        "allergies TEXT",
-        "training_type TEXT",
-        "diet_preferences TEXT",
         "gender TEXT DEFAULT 'Male'",
-        "goal TEXT DEFAULT 'Maintain'"
+        "goal TEXT DEFAULT 'Maintain'",
     ]
     for col_def in additional_cols:
         try:
             cur.execute(f"ALTER TABLE profiles ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
-            pass  # column already exists
+            # column already exists
+            pass
 
     conn.commit()
     conn.close()
-
 
 
 def hash_password(password: str) -> str:
@@ -240,17 +250,8 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 
-# ---------- password + email validation ----------
-
 def validate_password_strength(password: str):
-    """
-    Check if password is strong enough:
-    - at least 8 characters
-    - at least one lowercase letter
-    - at least one uppercase letter
-    - at least one digit
-    - at least one special character
-    """
+    """Check password strength rules."""
     if len(password) < 8:
         return False, "Password must be at least 8 characters long."
     if not re.search(r"[a-z]", password):
@@ -260,10 +261,7 @@ def validate_password_strength(password: str):
     if not re.search(r"[0-9]", password):
         return False, "Password must contain at least one digit."
     if not re.search(r"[^A-Za-z0-9]", password):
-        return False, (
-            "Password must contain at least one special character "
-            "(e.g. !, ?, #, ...)."
-        )
+        return False, "Password must contain at least one special character (e.g. !, ?, #, @)."
     return True, ""
 
 
@@ -294,10 +292,11 @@ def register_user(email: str, password: str):
             """
             INSERT INTO profiles (
                 user_id, age, weight, height,
-                username, allergies, training_type, diet_preferences
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                username, allergies, training_type, diet_preferences,
+                gender, goal
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_id, None, None, None, None, None, None, None),
+            (user_id, None, None, None, None, None, None, None, "Male", "Maintain"),
         )
 
         conn.commit()
@@ -313,10 +312,7 @@ def verify_user(email: str, password: str):
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute(
-        "SELECT id, password_hash FROM users WHERE email = ?",
-        (email,),
-    )
+    cur.execute("SELECT id, password_hash FROM users WHERE email = ?", (email,))
     row = cur.fetchone()
     conn.close()
 
@@ -351,349 +347,6 @@ def reset_password(email: str, new_password: str):
 
 # =========================================================
 # PROFILE DB ACCESS
-# =========================================================
-
-def get_profile(user_id: int):
-    """Fetch profile info for a given user_id."""
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute(
-        """
-        SELECT age, weight, height,
-               username, allergies, training_type, diet_preferences
-        FROM profiles WHERE user_id = ?
-        """,
-        (user_id,),
-    )
-    row = cur.fetchone()
-    conn.close()
-
-    if row:
-        return {
-            "age": row[0],
-            "weight": row[1],
-            "height": row[2],
-            "username": row[3],
-            "allergies": row[4],
-            "training_type": row[5],
-            "diet_preferences": row[6],
-        }
-
-    return {
-        "age": None,
-        "weight": None,
-        "height": None,
-        "username": None,
-        "allergies": None,
-        "training_type": None,
-        "diet_preferences": None,
-    }
-
-
-def update_profile(
-    user_id: int,
-    age: int,
-    weight: float,
-    height: float,
-    username: str,
-    allergies: str,
-    training_type: str,
-    diet_preferences: str,
-):
-    """Update profile values for a given user_id."""
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute(
-        """
-        UPDATE profiles
-        SET age = ?, weight = ?, height = ?,
-            username = ?, allergies = ?,
-            training_type = ?, diet_preferences = ?
-        WHERE user_id = ?
-        """,
-        (
-            age,
-            weight,
-            height,
-            username,
-            allergies,
-            training_type,
-            diet_preferences,
-            user_id,
-        ),
-    )
-    conn.commit()
-    conn.close()
-
-
-# =========================================================
-# AUTHENTICATION UI (LOGIN / REGISTER / RESET)
-# =========================================================
-
-def show_login_page():
-    """Login screen styled with centered card."""
-    col_left, col_center, col_right = st.columns([1, 2, 1])
-
-    with col_center:
-        st.title("Login")
-        st.caption("Log in to your UniFit Coach dashboard.")
-
-        with st.container(border=True):
-            email = st.text_input("Email")
-            password = st.text_input("Password", type="password")
-
-            if st.button("Login", use_container_width=True):
-                if not email or not password:
-                    st.error("Please enter both email and password.")
-                else:
-                    user_id = verify_user(email, password)
-                    if user_id:
-                        st.session_state.logged_in = True
-                        st.session_state.user_id = user_id
-                        st.session_state.user_email = email
-                        st.session_state.current_page = "Profile"
-                        st.rerun()
-                    else:
-                        st.error("Invalid email or password.")
-
-        st.write("---")
-        st.write("Don't have an account yet?")
-        if st.button("Create a new account", use_container_width=True):
-            st.session_state.login_mode = "register"
-            st.rerun()
-
-        st.write("")
-        if st.button("Forgot password?", use_container_width=True):
-            st.session_state.login_mode = "reset"
-            st.rerun()
-
-
-def show_register_page():
-    """Registration screen styled with centered card and password rules."""
-    col_left, col_center, col_right = st.columns([1, 2, 1])
-
-    with col_center:
-        st.title("Register")
-        st.caption("Create an account for UniFit Coach.")
-
-        with st.container(border=True):
-            email = st.text_input("Email")
-            password = st.text_input("Password", type="password")
-
-            st.markdown(
-                """
-                **Password must contain:**
-                - at least 8 characters  
-                - at least one lowercase letter  
-                - at least one uppercase letter  
-                - at least one digit  
-                - at least one special character (e.g. `!`, `?`, `#`, `@`)
-                """,
-                unsafe_allow_html=False,
-            )
-
-            if st.button("Register", use_container_width=True):
-                if not email or not password:
-                    st.error("Please enter both email and password.")
-                elif not is_valid_email(email):
-                    st.error("Please enter a valid email address.")
-                else:
-                    ok_pw, msg_pw = validate_password_strength(password)
-                    if not ok_pw:
-                        st.error(msg_pw)
-                    else:
-                        ok, msg, user_id = register_user(email, password)
-                        if ok:
-                            st.session_state.logged_in = True
-                            st.session_state.user_id = user_id
-                            st.session_state.user_email = email
-                            st.session_state.current_page = "Profile"
-                            st.success("Account created! Let's set up your profile.")
-                            st.rerun()
-                        else:
-                            st.error(msg)
-
-        st.write("---")
-        if st.button("Back to login", use_container_width=True):
-            st.session_state.login_mode = "login"
-            st.rerun()
-
-
-def show_reset_password_page():
-    """Simple password reset: enter email + new password (demo, no email verification)."""
-    col_left, col_center, col_right = st.columns([1, 2, 1])
-
-    with col_center:
-        st.title("Reset password")
-        st.caption(
-            "For demo purposes, you can reset your password by entering your email "
-            "and a new password."
-        )
-
-        with st.container(border=True):
-            email = st.text_input("Email")
-            new_pw = st.text_input("New password", type="password")
-            confirm_pw = st.text_input("Confirm new password", type="password")
-
-            if st.button("Reset password", use_container_width=True):
-                if not email or not new_pw or not confirm_pw:
-                    st.error("Please fill out all fields.")
-                elif new_pw != confirm_pw:
-                    st.error("Passwords do not match.")
-                elif not is_valid_email(email):
-                    st.error("Please enter a valid email address.")
-                else:
-                    ok_pw, msg_pw = validate_password_strength(new_pw)
-                    if not ok_pw:
-                        st.error(msg_pw)
-                    else:
-                        ok, msg = reset_password(email, new_pw)
-                        if ok:
-                            st.success(msg)
-                            st.session_state.login_mode = "login"
-                            st.rerun()
-                        else:
-                            st.error(msg)
-
-        st.write("---")
-        if st.button("Back to login", use_container_width=True):
-            st.session_state.login_mode = "login"
-            st.rerun()
-
-
-# =========================================================
-# PUMPFESSOR JOE – SIMPLE IN-APP GUIDE
-# =========================================================
-
-def show_pumpfessor_joe(page_name: str):
-    """Small helper box with tips depending on the current page."""
-    with st.expander("👨‍🏫 Pumpfessor Joe – Need a quick guide?", expanded=False):
-        if page_name == "Profile":
-            st.write(
-                "Welcome to your **Profile**! 🧍‍♂️\n\n"
-                "- Enter your age, weight, height, preferences and allergies.\n"
-                "- Click **Save profile**.\n"
-                "- This data can be used to personalize your workouts "
-                "and nutrition advice."
-            )
-        elif page_name == "Trainer":
-            st.write(
-                "This is the **Trainer** page. 🏋️‍♂️\n\n"
-                "Use the tabs to build a workout with Pumpfessor Joe and "
-                "see your long-term training schedule."
-            )
-        elif page_name == "Calorie tracker":
-            st.write(
-                "On the **Calorie tracker** page 🔥 you can:\n"
-                "- Enter your body data and training session.\n"
-                "- Let Pumpfessor Joe estimate your daily calorie target.\n"
-                "- Log your meals and track calories & protein with donut charts."
-            )
-        elif page_name == "Nutrition adviser":
-            st.write(
-                "The **Nutrition adviser** page 🥗 will later give you suggestions on "
-                "meals or macros based on your goals and allergies."
-            )
-        elif page_name == "Progress":
-            st.write(
-                "The **Progress** page 📈 shows how you're doing over time.\n\n"
-                "Right now you see a demo chart. In the future, this can be replaced "
-                "with real workout or calorie data."
-            )
-        else:
-            st.write(
-                "Pumpfessor Joe is here to help you navigate UniFit Coach. "
-                "Use the menu on the left to switch between pages."
-            )
-
-
-# =========================================================
-# APP PAGES
-# =========================================================
-
-# =========================================================
-# PROFILE DB ACCESS (updated copy is below too)
-# =========================================================
-
-def get_profile(user_id: int):
-    """Fetch profile info for a given user_id."""
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute(
-        """
-        SELECT age, weight, height,
-               username, allergies, training_type, diet_preferences
-        FROM profiles WHERE user_id = ?
-        """,
-        (user_id,),
-    )
-    row = cur.fetchone()
-    conn.close()
-
-    if row:
-        return {
-            "age": row[0],
-            "weight": row[1],
-            "height": row[2],
-            "username": row[3],
-            "allergies": row[4],
-            "training_type": row[5],
-            "diet_preferences": row[6],
-        }
-
-    return {
-        "age": None,
-        "weight": None,
-        "height": None,
-        "username": None,
-        "allergies": None,
-        "training_type": None,
-        "diet_preferences": None,
-    }
-
-
-def update_profile(
-    user_id: int,
-    age: int,
-    weight: float,
-    height: float,
-    username: str,
-    allergies: str,
-    training_type: str,
-    diet_preferences: str,
-):
-    """Update profile values for a given user_id."""
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute(
-        """
-        UPDATE profiles
-        SET age = ?, weight = ?, height = ?,
-            username = ?, allergies = ?,
-            training_type = ?, diet_preferences = ?
-        WHERE user_id = ?
-        """,
-        (
-            age,
-            weight,
-            height,
-            username,
-            allergies,
-            training_type,
-            diet_preferences,
-            user_id,
-        ),
-    )
-    conn.commit()
-    conn.close()
-
-
-# =========================================================
-# PROFILE DB ACCESS (updated with gender + goal) - KEEP this one too
 # =========================================================
 
 def get_profile(user_id: int):
@@ -781,12 +434,159 @@ def update_profile(
     conn.close()
 
 
+def is_profile_complete(profile: dict) -> bool:
+    """Return True if all required profile fields are filled."""
+    required = [
+        profile.get("username"),
+        profile.get("age"),
+        profile.get("weight"),
+        profile.get("height"),
+        profile.get("training_type"),
+        profile.get("diet_preferences"),
+        profile.get("gender"),
+        profile.get("goal"),
+    ]
+    return all(v not in (None, 0, 0.0, "", "Not set") for v in required)
+
+
 # =========================================================
-# PROFILE PAGE (updated)
+# AUTHENTICATION UI
+# =========================================================
+
+def show_login_page():
+    col_left, col_center, col_right = st.columns([1, 2, 1])
+
+    with col_center:
+        st.title("Login")
+        st.caption("Log in to your UniFit Coach dashboard.")
+
+        with st.container(border=True):
+            email = st.text_input("Email")
+            password = st.text_input("Password", type="password")
+
+            if st.button("Login", use_container_width=True):
+                if not email or not password:
+                    st.error("Please enter both email and password.")
+                else:
+                    user_id = verify_user(email, password)
+                    if user_id:
+                        st.session_state.logged_in = True
+                        st.session_state.user_id = user_id
+                        st.session_state.user_email = email
+                        st.session_state.current_page = "Profile"
+                        st.query_params["page"] = "profile"
+                        st.rerun()
+                    else:
+                        st.error("Invalid email or password.")
+
+        st.write("---")
+        st.write("Do not have an account yet?")
+        if st.button("Create a new account", use_container_width=True):
+            st.session_state.login_mode = "register"
+            st.rerun()
+
+        st.write("")
+        if st.button("Forgot password?", use_container_width=True):
+            st.session_state.login_mode = "reset"
+            st.rerun()
+
+
+def show_register_page():
+    col_left, col_center, col_right = st.columns([1, 2, 1])
+
+    with col_center:
+        st.title("Register")
+        st.caption("Create an account for UniFit Coach.")
+
+        with st.container(border=True):
+            email = st.text_input("Email")
+            password = st.text_input("Password", type="password")
+
+            st.markdown(
+                """
+                **Password must contain:**
+                - at least 8 characters  
+                - at least one lowercase letter  
+                - at least one uppercase letter  
+                - at least one digit  
+                - at least one special character (e.g. `!`, `?`, `#`, `@`)
+                """,
+                unsafe_allow_html=False,
+            )
+
+            if st.button("Register", use_container_width=True):
+                if not email or not password:
+                    st.error("Please enter both email and password.")
+                elif not is_valid_email(email):
+                    st.error("Please enter a valid email address.")
+                else:
+                    ok_pw, msg_pw = validate_password_strength(password)
+                    if not ok_pw:
+                        st.error(msg_pw)
+                    else:
+                        ok, msg, user_id = register_user(email, password)
+                        if ok:
+                            st.session_state.logged_in = True
+                            st.session_state.user_id = user_id
+                            st.session_state.user_email = email
+                            st.session_state.current_page = "Profile"
+                            st.success("Account created. Please complete your profile to unlock all applications.")
+                            st.query_params["page"] = "profile"
+                            st.rerun()
+                        else:
+                            st.error(msg)
+
+        st.write("---")
+        if st.button("Back to login", use_container_width=True):
+            st.session_state.login_mode = "login"
+            st.rerun()
+
+
+def show_reset_password_page():
+    col_left, col_center, col_right = st.columns([1, 2, 1])
+
+    with col_center:
+        st.title("Reset password")
+        st.caption(
+            "For demo purposes, you can reset your password by entering your email and a new password."
+        )
+
+        with st.container(border=True):
+            email = st.text_input("Email")
+            new_pw = st.text_input("New password", type="password")
+            confirm_pw = st.text_input("Confirm new password", type="password")
+
+            if st.button("Reset password", use_container_width=True):
+                if not email or not new_pw or not confirm_pw:
+                    st.error("Please fill out all fields.")
+                elif new_pw != confirm_pw:
+                    st.error("Passwords do not match.")
+                elif not is_valid_email(email):
+                    st.error("Please enter a valid email address.")
+                else:
+                    ok_pw, msg_pw = validate_password_strength(new_pw)
+                    if not ok_pw:
+                        st.error(msg_pw)
+                    else:
+                        ok, msg = reset_password(email, new_pw)
+                        if ok:
+                            st.success(msg)
+                            st.session_state.login_mode = "login"
+                            st.rerun()
+                        else:
+                            st.error(msg)
+
+        st.write("---")
+        if st.button("Back to login", use_container_width=True):
+            st.session_state.login_mode = "login"
+            st.rerun()
+
+
+# =========================================================
+# APP PAGES
 # =========================================================
 
 def show_profile_page():
-    """Profile page with inputs stored in the database, including Gender + Goal."""
     user_id = st.session_state.user_id
     profile = get_profile(user_id)
 
@@ -794,12 +594,10 @@ def show_profile_page():
     st.write("Basic information that can be used by the trainer and nutrition logic later.")
     st.divider()
 
-    # Use a full-width container for the profile form so it can expand
     with st.container():
         with st.container(border=True):
             st.subheader("Your data")
 
-            # keep two-column layout for form fields inside the full width container
             c1, c2 = st.columns(2)
 
             with c1:
@@ -887,7 +685,7 @@ def show_profile_page():
             allergies = st.text_area(
                 "Allergies (optional)",
                 value=profile["allergies"] or "",
-                help="For example: peanuts, lactose, gluten …",
+                help="For example: peanuts, lactose, gluten.",
             )
 
             if st.button("Save profile", use_container_width=True):
@@ -908,7 +706,6 @@ def show_profile_page():
     st.divider()
     st.subheader("Current profile data")
 
-    # reload profile from DB (in case it changed)
     profile = get_profile(user_id)
 
     st.write(f"**Username:** {profile['username'] or 'Not set'}")
@@ -921,7 +718,6 @@ def show_profile_page():
     st.write(f"**Diet preference:** {profile['diet_preferences'] or 'Not set'}")
     st.write(f"**Allergies:** {profile['allergies'] or 'None noted'}")
 
-    # --- Profile completeness indicator ---
     fields_for_completeness = [
         profile["username"],
         profile["age"],
@@ -933,9 +729,7 @@ def show_profile_page():
         profile["goal"],
     ]
     filled_fields = sum(
-        1
-        for v in fields_for_completeness
-        if v not in (None, 0, 0.0, "", "Not set")
+        1 for v in fields_for_completeness if v not in (None, 0, 0.0, "", "Not set")
     )
     completeness = filled_fields / len(fields_for_completeness)
     st.write("")
@@ -943,14 +737,11 @@ def show_profile_page():
     st.progress(completeness)
 
 
-
 def show_trainer_page():
-    """Trainer page: integrates Pumpfessor Joe workout builder + calendar."""
     st.header("Trainer")
-    st.write("Build your personalized workout and see your training calendar with Pumpfessor Joe 🧠💪")
+    st.write("Build your personalized workout and see your training calendar.")
     st.divider()
 
-    # Use full-width container so embedded modules can expand across the page
     with st.container():
         with st.container(border=True):
             tabs = st.tabs(["Workout builder", "Training calendar"])
@@ -963,7 +754,6 @@ def show_trainer_page():
 
 
 def show_calorie_tracker_page():
-    """Calorie tracker page: integrates ML-based nutrition planner."""
     st.header("Calorie tracker")
     st.divider()
 
@@ -971,9 +761,9 @@ def show_calorie_tracker_page():
         with st.container(border=True):
             calorie_tracker.main()
 
+
 def show_calories_nutrition_page():
-    """Calorie tracker page: integrates ML-based nutrition planner."""
-    st.header("Calorie tracker")
+    st.header("Calories and nutrition")
     st.divider()
 
     with st.container():
@@ -982,17 +772,15 @@ def show_calories_nutrition_page():
 
 
 def show_nutrition_page():
-    """Nutrition adviser page: load logic from nutrition_advisory.py"""
     st.header("Nutrition adviser")
     st.divider()
 
     with st.container():
         with st.container(border=True):
-            # ruft das externe Modul auf
             nutrition_advisory.main()
 
+
 def show_progress_page():
-    """Simple placeholder progress page with a demo chart."""
     st.header("Progress")
     st.divider()
 
@@ -1017,12 +805,153 @@ def show_progress_page():
 
 
 # =========================================================
+# PUMPFESSOR JOE – SIDEBAR CHATBOT
+# =========================================================
+
+def build_user_context(user_id: int) -> str:
+    """
+    Build a compact textual context from the user's data.
+    Extend this later with workouts, calories, etc.
+    """
+    if not user_id:
+        return "No user profile available."
+
+    profile = get_profile(user_id)
+    parts = [
+        f"Age: {profile.get('age')}",
+        f"Weight: {profile.get('weight')} kg",
+        f"Height: {profile.get('height')} cm",
+        f"Gender: {profile.get('gender')}",
+        f"Goal: {profile.get('goal')}",
+        f"Preferred training style: {profile.get('training_type')}",
+        f"Diet preference: {profile.get('diet_preferences')}",
+        f"Allergies: {profile.get('allergies')}",
+    ]
+    return " | ".join(str(p) for p in parts)
+
+
+def ask_pumpfessor(question: str, user_id: int, history: list[dict]) -> str:
+    """
+    Call OpenAI to get a Pumpfessor Joe answer based on user context and chat history.
+    """
+    user_context = build_user_context(user_id)
+
+    system_prompt = (
+        "You are Pumpfessor Joe, the strict but fair AI strength and nutrition coach "
+        "for the UniFit Coach app. You base your answers on the user's profile and goals. "
+        "Be clear, concise, and practical. Focus on strength training, hypertrophy, "
+        "calorie and protein guidance, and habit-building. Do not give medical advice."
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": f"User context: {user_context}"},
+    ]
+
+    # Add recent history (last 10 turns)
+    for msg in history[-10:]:
+        if msg["role"] in ("user", "assistant"):
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+    messages.append({"role": "user", "content": question})
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=messages,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Pumpfessor Joe encountered an error while generating a response: {e}"
+
+
+def show_pumpfessor_sidebar():
+    """Render Pumpfessor Joe in the sidebar."""
+    st.sidebar.write("---")
+    with st.sidebar.container():
+        st.sidebar.markdown(
+            """
+            <div style="text-align:center; font-weight:700; margin-bottom:0.5rem;">
+                Pumpfessor Joe
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if PUMPFESSOR_IMAGE:
+            st.sidebar.markdown(
+                f"""
+                <div style="text-align:center; margin-bottom:0.75rem;">
+                    <img src="data:image/png;base64,{PUMPFESSOR_IMAGE}"
+                         style="width:130px; border-radius:8px; display:block; margin:0 auto;">
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        if "pumpfessor_messages" not in st.session_state:
+            st.session_state.pumpfessor_messages = []
+
+        # Show short chat history
+        for msg in st.session_state.pumpfessor_messages[-6:]:
+            if msg["role"] == "user":
+                st.sidebar.markdown(f"**You:** {msg['content']}")
+            else:
+                st.sidebar.markdown(f"**Pumpfessor Joe:** {msg['content']}")
+
+        user_input = st.sidebar.text_input("Ask a question", key="pumpfessor_input")
+
+        if st.sidebar.button("Send", use_container_width=True):
+            q = user_input.strip()
+            if q:
+                st.session_state.pumpfessor_messages.append(
+                    {"role": "user", "content": q}
+                )
+                answer = ask_pumpfessor(
+                    q,
+                    st.session_state.get("user_id", 0),
+                    st.session_state.pumpfessor_messages,
+                )
+                st.session_state.pumpfessor_messages.append(
+                    {"role": "assistant", "content": answer}
+                )
+                st.rerun()  # updated from st.experimental_rerun()
+
+
+# =========================================================
+# PAGE SLUG HELPERS (FOR URL)
+# =========================================================
+
+def slug_for_page(page_name: str) -> str:
+    mapping = {
+        "Profile": "profile",
+        "Trainer": "trainer",
+        "Calorie tracker": "calorie-tracker",
+        "Calories & Nutrition": "calories-nutrition",
+        "Nutrition adviser": "nutrition-adviser",
+        "Progress": "progress",
+    }
+    return mapping.get(page_name, "profile")
+
+
+def page_for_slug(slug: str) -> str:
+    mapping = {
+        "profile": "Profile",
+        "trainer": "Trainer",
+        "calorie-tracker": "Calorie tracker",
+        "calories-nutrition": "Calories & Nutrition",
+        "nutrition-adviser": "Nutrition adviser",
+        "progress": "Progress",
+    }
+    return mapping.get(slug, "Profile")
+
+
+# =========================================================
 # MAIN APP
 # =========================================================
 
 def main():
-    """Entry point: handle login state and page routing."""
-    create_tables()  # make sure DB tables exist
+    create_tables()
 
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
@@ -1031,9 +960,14 @@ def main():
     if "current_page" not in st.session_state:
         st.session_state.current_page = "Profile"
 
-    # if not logged in, show auth pages only (with background image)
+    # sync page from URL (query param)
+    params = st.query_params
+    if "page" in params:
+        slug = params["page"][0]
+        st.session_state.current_page = page_for_slug(slug)
+
+    # NOT LOGGED IN: auth pages with centered glass window
     if not st.session_state.logged_in:
-        # background image on login / register / reset page
         st.markdown(
             f"""
             <style>
@@ -1049,6 +983,10 @@ def main():
                 border-radius: 1rem;
                 padding-top: 2rem;
                 padding-bottom: 2rem;
+                max-width: 750px !important;
+                margin: 6rem auto !important;
+                padding-left: 2rem;
+                padding-right: 2rem;
             }}
             </style>
             """,
@@ -1056,7 +994,7 @@ def main():
         )
 
         st.title("UniFit Coach")
-        st.caption("Train smarter. Eat better. Stay consistent. 🌿")
+        st.caption("Train smarter. Eat better. Stay consistent.")
         st.divider()
 
         mode = st.session_state.login_mode
@@ -1068,7 +1006,7 @@ def main():
             show_reset_password_page()
         return
 
-    # when logged in: remove background image -> plain white
+    # LOGGED IN: plain white background
     st.markdown(
         """
         <style>
@@ -1081,13 +1019,17 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # --------------- SIDEBAR (logo + navigation) ---------------
+    user_id = st.session_state.user_id
+    profile = get_profile(user_id)
+    profile_complete = is_profile_complete(profile)
+
+    # --------------- SIDEBAR ---------------
     if LOGO_IMAGE:
         st.sidebar.markdown(
             f"""
-            <div style="text-align: left; padding-top: 1rem; padding-bottom: 1rem;">
+            <div style="padding-top:0.25rem; padding-bottom:0.5rem; text-align:center;">
                 <img src="data:image/png;base64,{LOGO_IMAGE}"
-                     style="width: 170px; margin-bottom: 0.5rem;">
+                     style="width:240px; display:block; margin:0 auto;">
             </div>
             """,
             unsafe_allow_html=True,
@@ -1095,25 +1037,52 @@ def main():
     else:
         st.sidebar.markdown("### UniFit Coach")
 
-    st.sidebar.caption("Menu")
+    # Prominent menu heading
+    st.sidebar.markdown(
+        f"""
+        <div style='
+            font-size:1.2rem;
+            font-weight:700;
+            margin:1rem 0 0.5rem 0;
+            padding-left:0.4rem;
+            border-left:4px solid {PRIMARY_GREEN};
+        '>
+            Menu
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    # show logged-in email in the sidebar
     if "user_email" in st.session_state and st.session_state.user_email:
         st.sidebar.caption(f"Logged in as: {st.session_state.user_email}")
         st.sidebar.write("---")
 
-    if st.sidebar.button("👤  Profile"):
+    # navigation buttons
+    if st.sidebar.button("Profile"):
         st.session_state.current_page = "Profile"
-    if st.sidebar.button("🏋️‍♂️  Trainer"):
-        st.session_state.current_page = "Trainer"
-    if st.sidebar.button("🔥  Calorie tracker"):
-        st.session_state.current_page = "Calorie tracker"
-    if st.sidebar.button("🥘  Calories & Nutrition"):
-        st.session_state.current_page = "Calories & Nutrition"
-    if st.sidebar.button("🥗  Nutrition adviser"):
-        st.session_state.current_page = "Nutrition adviser"
-    if st.sidebar.button("📈  Progress"):
-        st.session_state.current_page = "Progress"
+        st.query_params["page"] = slug_for_page("Profile")
+
+    if profile_complete:
+        if st.sidebar.button("Trainer"):
+            st.session_state.current_page = "Trainer"
+            st.query_params["page"] = slug_for_page("Trainer")
+        if st.sidebar.button("Calorie tracker"):
+            st.session_state.current_page = "Calorie tracker"
+            st.query_params["page"] = slug_for_page("Calorie tracker")
+        if st.sidebar.button("Calories and nutrition"):
+            st.session_state.current_page = "Calories & Nutrition"
+            st.query_params["page"] = slug_for_page("Calories & Nutrition")
+        if st.sidebar.button("Nutrition adviser"):
+            st.session_state.current_page = "Nutrition adviser"
+            st.query_params["page"] = slug_for_page("Nutrition adviser")
+        if st.sidebar.button("Progress"):
+            st.session_state.current_page = "Progress"
+            st.query_params["page"] = slug_for_page("Progress")
+    else:
+        st.sidebar.caption("Complete your profile to unlock the applications.")
+
+    # Pumpfessor Joe chatbot (under navigation, above logout)
+    show_pumpfessor_sidebar()
 
     st.sidebar.write("---")
     if st.sidebar.button("Log out"):
@@ -1121,21 +1090,25 @@ def main():
         st.session_state.user_id = None
         st.session_state.user_email = None
         st.session_state.login_mode = "login"
+        st.query_params.clear()  # clear query params
         st.rerun()
 
-    # --------------- MAIN LAYOUT (same structure for all pages) ---------------
+    # --------------- MAIN LAYOUT ---------------
     st.title("UniFit Coach")
-    st.caption("Train smarter. Eat better. Stay consistent. 🌿")
+    st.caption("Train smarter. Eat better. Stay consistent.")
     if "user_email" in st.session_state and st.session_state.user_email:
-        st.write(f"Welcome back, **{st.session_state.user_email}** 👋")
+        st.write(f"Welcome back, **{st.session_state.user_email}**")
     st.divider()
 
     page = st.session_state.current_page
 
-    # Pumpfessor Joe helper für die aktuelle Seite
-    show_pumpfessor_joe(page)
+    # enforce profile completion
+    if not profile_complete and page != "Profile":
+        page = "Profile"
+        st.session_state.current_page = "Profile"
+        st.warning("Please complete your profile before accessing the applications.")
 
-    # Seiten anzeigen
+    # route pages
     if page == "Profile":
         show_profile_page()
     elif page == "Trainer":
@@ -1146,13 +1119,11 @@ def main():
         show_nutrition_page()
     elif page == "Progress":
         show_progress_page()
-    # <<< Hier die neue Seite einfügen >>>
     elif page == "Calories & Nutrition":
         show_calories_nutrition_page()
 
 
-
-# ---- FINAL CSS OVERRIDES (ensure buttons + sidebar look correct) ----
+# ---- FINAL CSS OVERRIDES (sidebar buttons etc.) ----
 st.markdown(
     f"""
     <style>
@@ -1163,15 +1134,25 @@ st.markdown(
         font-weight: 600 !important;
     }}
 
-    /* Sidebar buttons: white by default, green text + border */
+    /* Sidebar buttons: white by default, green text + border; centered and same width */
     section[data-testid="stSidebar"] div.stButton > button {{
         width: 100% !important;
+        max-width: 260px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        display: block !important;
         background-color: #ffffff !important;
         color: {PRIMARY_GREEN} !important;
         border: 1px solid {PRIMARY_GREEN} !important;
+        text-align: center !important;
+        justify-content: center !important;
+        padding: 0.6rem 0.75rem;
     }}
     section[data-testid="stSidebar"] div.stButton > button * {{
         color: {PRIMARY_GREEN} !important;
+    }}
+    section[data-testid="stSidebar"] div.stButton {{
+        margin-bottom: 0.35rem;
     }}
 
     /* Sidebar buttons on hover/press: green background, white text */
@@ -1193,4 +1174,9 @@ st.markdown(
 
 
 if __name__ == "__main__":
+    # Load recipes DataFrame once at app start
+    if "recipes_df" not in st.session_state:
+        with st.spinner("Loading recipe data..."):
+            st.session_state.recipes_df = load_and_prepare_data(DATA_URL)
+
     main()
