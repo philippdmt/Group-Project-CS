@@ -407,35 +407,8 @@ def show_recipe_card(
                             st.session_state.daily_plan[meal_name] = (new_row, meal_target_calories)
 
                 return
-
-
-
-            # -------------------------- RATING AFTER EATING --------------------------
-            if rating_stage == "none":
-                like, dislike = st.columns(2)
-
-                if like.button("I liked this meal", key=f"like_{key_prefix}"):
-                    if pref_model:
-                        pref_model.update_with_rating(row, +1)
-                    st.session_state.rating_stage[recipe_name] = "liked"
-
-                if dislike.button("I didn't like this meal", key=f"dislike_{key_prefix}"):
-                    if pref_model:
-                        pref_model.update_with_rating(row, -1)
-                    st.session_state.rating_stage[recipe_name] = "disliked"
-
-            elif rating_stage == "liked":
-                c1, c2 = st.columns(2)
-                if c1.button("Save in favourites", key=f"fav_{key_prefix}"):
-                    st.session_state.favourite_recipes.add(row.name)
-                    st.session_state.rating_stage[recipe_name] = "liked_saved"
-                if c2.button("Don't save", key=f"nofav_{key_prefix}"):
-                    st.session_state.rating_stage[recipe_name] = "liked_nosave"
-
-
-# =============================================================================
 # MAIN APP
-# =============================================================================
+
 def main(df=None):
     init_session_state()
 
