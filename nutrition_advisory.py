@@ -387,28 +387,27 @@ def show_recipe_card(
             # -------------------------- BUTTON LAYOUT --------------------------
             if not eaten:
 
-                left, spacer, right = st.columns([1, 2, 2])
+                col_left, col_mid, col_right = st.columns(3)
 
-                # LINKS: I have eaten this
-                if left.button("I have eaten this", key=f"eat_{key_prefix}"):
+                # Links: I have eaten this
+                if col_left.button("I have eaten this", key=f"eat_{key_prefix}"):
                     log_meal(row, meal_name)
                     st.session_state.rating_stage[recipe_name] = "none"
 
-                # RECHTS: I like this + I don't like this (nebeneinander, gleich hoch)
-                with right:
-                    col_like, col_dislike = st.columns(2)
+                # Mitte: I like this
+                if col_mid.button("I like this", key=f"like_{key_prefix}"):
+                    st.session_state.favourite_recipes.add(row.name)
+                    st.success("Added to favourites!")
 
-                    if col_like.button("I like this", key=f"like_{key_prefix}"):
-                        st.session_state.favourite_recipes.add(row.name)
-                        st.success("Added to favourites!")
-
-                    if col_dislike.button("I don't like this", key=f"dislike_{key_prefix}"):
-                        if df is not None and meal_target_calories is not None:
-                            new_row = pick_meal(df, meal_name, meal_target_calories, "", pref_model)
-                            if new_row is not None:
-                                st.session_state.daily_plan[meal_name] = (new_row, meal_target_calories)
+                # Rechts: I don't like this
+                if col_right.button("I don't like this", key=f"dislike_{key_prefix}"):
+                    if df is not None and meal_target_calories is not None:
+                        new_row = pick_meal(df, meal_name, meal_target_calories, "", pref_model)
+                        if new_row is not None:
+                            st.session_state.daily_plan[meal_name] = (new_row, meal_target_calories)
 
                 return
+
 
 
             # -------------------------- RATING AFTER EATING --------------------------
