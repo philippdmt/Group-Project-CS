@@ -61,6 +61,7 @@ class UserPreferenceModel:
             score -= self.disliked_ingredients.get(ing, 0)
         return score
 
+
 # =============================================================================
 # INGREDIENT PARSING
 # =============================================================================
@@ -118,6 +119,8 @@ def scale_ingredient_lines(lines, factor: float):
         new_qty = qty * factor
         scaled.append(f"{float_to_fraction_str(new_qty)} {rest}".strip())
     return scaled
+
+
 # =============================================================================
 # DATA HELPERS
 # =============================================================================
@@ -151,6 +154,7 @@ def parse_ingredient_lines_for_display(x):
     except:
         pass
     return [p.strip() for p in str(x).split(",") if p.strip()]
+
 
 @st.cache_data(show_spinner=True)
 def load_and_prepare_data(path_or_url: str) -> pd.DataFrame:
@@ -236,7 +240,7 @@ def search_recipes(df, include_ingredients, exclude_ingredients, meal_type, max_
             )
         ]
 
-    if pref_model:
+    if isinstance(pref_model, UserPreferenceModel):
         base = base.copy()
         base["score"] = base.apply(pref_model.score_recipe, axis=1)
         base = base.sort_values("score", ascending=False)
@@ -259,7 +263,8 @@ def pick_meal(df, meal_type, target_cal, training_goal, pref_model):
     else:
         base = base.sort_values("cal_diff")
 
-    if pref_model:
+    # FIX: Prüfen, ob pref_model korrekt ist
+    if isinstance(pref_model, UserPreferenceModel):
         base["score"] = base.apply(pref_model.score_recipe, axis=1)
         base = base.sort_values(["score", "cal_diff"], ascending=[False, True])
 
@@ -273,27 +278,37 @@ def recommend_daily_plan(df, daily_calories, training_goal, diet_pref, allergies
         "Lunch": (pick_meal(user_df, "lunch", daily_calories * 0.40, training_goal, pref_model), daily_calories * 0.40),
         "Dinner": (pick_meal(user_df, "dinner", daily_calories * 0.35, training_goal, pref_model), daily_calories * 0.35),
     }
+
+
 # =============================================================================
 # SESSION STATE
 # =============================================================================
 def init_session_state():
-    if "pref_model" not in st.session_state:
+    # FIX: pref_model immer korrekt erzwingen
+    if "pref_model" not in st.session_state or not isinstance(st.session_state.pref_model, UserPreferenceModel):
         st.session_state.pref_model = UserPreferenceModel()
+
     if "meal_log" not in st.session_state:
         st.session_state.meal_log = []
+
     if "daily_plan" not in st.session_state:
         st.session_state.daily_plan = None
+
     if "eaten_today" not in st.session_state:
         st.session_state.eaten_today = set()
+
     if "rating_stage" not in st.session_state:
         st.session_state.rating_stage = {}
+
     if "ct_meals" not in st.session_state:
         st.session_state.ct_meals = []
+
     if "favourite_recipes" not in st.session_state:
         st.session_state.favourite_recipes = set()
 
+
 # =============================================================================
-# MEAL LOGGING (RECIPE LOG)
+# MEAL LOGGING
 # =============================================================================
 def log_meal(row: pd.Series, meal_name: str):
     st.session_state.meal_log.append({
@@ -303,6 +318,7 @@ def log_meal(row: pd.Series, meal_name: str):
         "protein": row["protein_g"],
     })
     st.session_state.eaten_today.add(row["recipe_name"])
+
 
 # =============================================================================
 # RECIPE CARD
@@ -392,6 +408,8 @@ def show_recipe_card(
                     st.session_state.rating_stage[recipe_name] = "liked_saved"
                 if c2.button("Don't save", key=f"nofav_{key_prefix}"):
                     st.session_state.rating_stage[recipe_name] = "liked_nosave"
+
+
 # =============================================================================
 # MAIN APP
 # =============================================================================
@@ -413,7 +431,7 @@ def main(df=None):
         "allergies": [],
     }
 
-    # ---------------------- TABS (Meals Eaten REMOVED) ----------------------
+    # ---------------------- TABS ----------------------
     tab_caltracker, tab_suggested, tab_search, tab_fav = st.tabs([
         "Calorie Tracker",
         "Suggested recipes",
@@ -507,7 +525,7 @@ def main(df=None):
                     show_recipe_card(df.loc[idx], f"fav_{idx}", "Favourite", "favourite")
 
     # =====================================================
-    # CALORIE TRACKER (COMBINED TABLE)
+    # CALORIE TRACKER
     # =====================================================
     with tab_caltracker:
         st.subheader("Calorie Tracker")
@@ -537,7 +555,6 @@ def main(df=None):
         gender = user.get("gender", "male")
         goal = user.get("goal", "Maintain")
 
-        # ---------- WORKOUT IMPORT ----------
         workout = st.session_state.get("current_workout")
 
         if workout is None:
@@ -589,7 +606,6 @@ def main(df=None):
         target_calories = max(target_calories, 1200)
         target_protein = protein_per_kg * weight
 
-        # ---------- DOUGHNUTS ----------
         total_cal = sum(m["calories"] for m in st.session_state.ct_meals) + \
                     sum(m["calories"] for m in st.session_state.meal_log)
 
@@ -603,9 +619,6 @@ def main(df=None):
         with c2:
             donut_chart(total_prot, target_protein, "Protein", "g")
 
-        # =====================================================
-        # NEW: COMBINED TABLE (Meals eaten today)
-        # =====================================================
         st.markdown("### Meals eaten today")
 
         recipe_meals = st.session_state.meal_log
@@ -632,9 +645,6 @@ def main(df=None):
         else:
             st.table(pd.DataFrame(combined))
 
-        # =====================================================
-        # MANUAL ADD
-        # =====================================================
         st.markdown("### Add additional meal")
 
         with st.form("manual_meal_form"):
@@ -657,6 +667,7 @@ def main(df=None):
             st.session_state.eaten_today = set()
             st.session_state.rating_stage = {}
             st.success("All meals for today have been reset.")
-    
+
+
 if __name__ == "__main__":
     main()
