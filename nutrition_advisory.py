@@ -385,7 +385,7 @@ def show_recipe_card(
                 return
             # -------------------------- NOT EATEN YET --------------------------
             # -------------------------- BUTTON LAYOUT --------------------------
-            if not eaten
+            if not eaten:
 
                 col_left, col_mid, col_right = st.columns(3)
 
