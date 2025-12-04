@@ -391,18 +391,26 @@ def show_recipe_card(
                     return
 
             # -------------------------- NOT EATEN YET --------------------------
+            # -------------------------- BUTTON LAYOUT --------------------------
             if not eaten:
-                colA, colB = st.columns(2)
 
-                if colA.button("I have eaten this", key=f"eat_{key_prefix}"):
+                left, mid, right = st.columns([1, 1, 1])
+
+                # Links
+                if left.button("I have eaten this", key=f"eat_{key_prefix}"):
                     log_meal(row, meal_name)
                     st.session_state.rating_stage[recipe_name] = "none"
 
-                if colB.button("I don't like this", key=f"skip_{key_prefix}"):
-                    if df is not None and meal_target_calories is not None:
-                        new_row = pick_meal(df, meal_name, meal_target_calories, "", pref_model)
-                        if new_row is not None:
-                            st.session_state.daily_plan[meal_name] = (new_row, meal_target_calories)
+                # Rechts — beide Buttons nebeneinander
+                with right:
+                    r1, r2 = st.columns(2)
+
+                    if r1.button("I like this", key=f"like_{key_prefix}"):
+                        st.session_state.favourite_recipes.add(row.name)
+                        st.success("Added to favourites!")
+
+                    if r2.button("I don't like this", key=f"dislike_{key_prefix}"):
+                        ...
                 return
 
             # -------------------------- RATING AFTER EATING --------------------------
