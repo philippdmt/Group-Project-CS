@@ -1127,35 +1127,74 @@ def main():
 st.markdown(
     f"""
     <style>
-    /* All action buttons (Login, Save profile, etc.) -> white text */
-    div.stButton > button,
-    div.stButton > button * {{
+
+    /* ==========================================================
+       GLOBAL BUTTONS (Used inside the main page)
+       These include: Login, Register, Save Profile, Trainer actions, etc.
+       All should use white text on green background.
+    ========================================================== */
+    div.stButton > button {{
         color: #ffffff !important;
         font-weight: 600 !important;
     }}
+    div.stButton > button * {{
+        color: #ffffff !important;
+    }}
 
-    /* Sidebar buttons: white by default, green text + border; centered and same width */
-    section[data-testid="stSidebar"] div.stButton > button {{
+    /* Override Streamlit default button hover/active behavior */
+    div.stButton > button:hover,
+    div.stButton > button:active,
+    div.stButton > button:focus {{
+        color: #ffffff !important;
+    }}
+    div.stButton > button:hover *,
+    div.stButton > button:active *,
+    div.stButton > button:focus * {{
+        color: #ffffff !important;
+    }}
+
+
+    /* ==========================================================
+       SIDEBAR LAYOUT → FULL CENTERING OF ALL CONTENT
+    ========================================================== */
+
+    /* Make the whole sidebar a vertical flexbox & center everything */
+    section[data-testid="stSidebar"] > div:first-child {{
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;    /* horizontal center */
+        justify-content: flex-start !important;
+    }}
+
+    /* Center each button block within the sidebar */
+    section[data-testid="stSidebar"] div.stButton {{
+        display: flex !important;
+        justify-content: center !important;
         width: 100% !important;
-        max-width: 260px !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        display: block !important;
+        margin-bottom: 0.45rem !important;
+    }}
+
+    /* ==========================================================
+       SIDEBAR BUTTONS (Navigation Menu)
+       These must stay green-text on white background.
+    ========================================================== */
+    section[data-testid="stSidebar"] div.stButton > button {{
+        width: 230px !important;               /* Sidebar button width */
         background-color: #ffffff !important;
         color: {PRIMARY_GREEN} !important;
         border: 1px solid {PRIMARY_GREEN} !important;
+        padding: 0.55rem 0.75rem !important;
         text-align: center !important;
-        justify-content: center !important;
-        padding: 0.6rem 0.75rem;
+        border-radius: 999px !important;       /* pill shape */
+        font-weight: 600 !important;
     }}
+
+    /* Ensure text inside sidebar buttons stays green */
     section[data-testid="stSidebar"] div.stButton > button * {{
         color: {PRIMARY_GREEN} !important;
     }}
-    section[data-testid="stSidebar"] div.stButton {{
-        margin-bottom: 0.35rem;
-    }}
 
-    /* Sidebar buttons on hover/press: green background, white text */
+    /* Sidebar button hover → green background, white text */
     section[data-testid="stSidebar"] div.stButton > button:hover,
     section[data-testid="stSidebar"] div.stButton > button:active,
     section[data-testid="stSidebar"] div.stButton > button:focus {{
@@ -1167,11 +1206,11 @@ st.markdown(
     section[data-testid="stSidebar"] div.stButton > button:focus * {{
         color: #ffffff !important;
     }}
+
     </style>
     """,
     unsafe_allow_html=True,
 )
-
 
 if __name__ == "__main__":
     # Load recipes DataFrame once at app start
